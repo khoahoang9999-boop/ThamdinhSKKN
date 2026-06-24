@@ -46,6 +46,11 @@ import { PlagiarismResult, PlagiarismSource, PlagiarismSegment, EvaluationResult
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { HighlightedText } from './components/HighlightedText';
+import * as pdfjsLib from 'pdfjs-dist';
+import { extractTextFromPDFFile } from './utils/pdfExtract';
+
+// Setup PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 // Helpers
 const renderList = (lines?: string[], defaultText = ".......................................................................................................................................................................................") => {
@@ -556,8 +561,12 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(getFriendlyErrorMessage(errData.details || errData.error || 'Lỗi hệ thống'));
+        if (response.status === 413) {
+          throw new Error('File tải lên quá lớn (Vượt giới hạn 4.5MB của Vercel). Vui lòng nén file PDF hoặc chuyển sang chế độ Copy/Paste văn bản.');
+        }
+        let errData;
+        try { errData = await response.json(); } catch (e) { throw new Error(`Lỗi máy chủ (${response.status}): ${response.statusText}`); }
+        throw new Error(getFriendlyErrorMessage(errData?.details || errData?.error || 'Lỗi hệ thống'));
       }
 
       const evalData = await response.json();
@@ -690,8 +699,12 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(getFriendlyErrorMessage(errData.details || errData.error || 'Lỗi hệ thống rà soát trùng lặp.'));
+        if (response.status === 413) {
+          throw new Error('File tải lên quá lớn (Vượt giới hạn 4.5MB của Vercel). Vui lòng nén file PDF hoặc chuyển sang chế độ Copy/Paste văn bản.');
+        }
+        let errData;
+        try { errData = await response.json(); } catch (e) { throw new Error(`Lỗi máy chủ (${response.status}): ${response.statusText}`); }
+        throw new Error(getFriendlyErrorMessage(errData?.details || errData?.error || 'Lỗi hệ thống rà soát trùng lặp.'));
       }
 
       const data = await response.json();
@@ -783,36 +796,47 @@ export default function App() {
     setIsExtractingInfo(true);
     setExtractionStep(1); // Mức 1: Bắt đầu đọc file
 
-    const reader = new FileReader();
-    
     let base64Data = '';
     let textData = '';
     
-    // Create a promise to wait for file read
-    await new Promise<void>((resolve, reject) => {
-      reader.onload = (event) => {
-        if (file.name.endsWith('.pdf')) {
-          base64Data = event.target?.result as string;
+    try {
+      if (file.name.endsWith('.pdf')) {
+        // Fallback for large files to avoid Vercel 4.5MB limit: extract text on client
+        if (file.size > 3.5 * 1024 * 1024) { // > 3.5MB
+          setInitiativeText(`📁 Đang đọc PDF lớn ("${file.name}")...`);
+          textData = await extractTextFromPDFFile(file);
+          setInitiativeText(textData);
+          setPlagFileBase64(''); // Đánh dấu không có base64
+        } else {
+          // Standard base64 parsing for smaller files
+          base64Data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
           setPlagFileBase64(base64Data);
           setInitiativeText(`📁 Đã nhận diện được tập tin PDF: "${file.name}"\n(Đang trích xuất tự động thông tin tác giả...)`);
-        } else if (file.name.endsWith('.txt')) {
-          textData = event.target?.result as string;
-          setInitiativeText(textData);
-          setPlagFileBase64('');
         }
-        resolve();
-      };
-      reader.onerror = reject;
-      
-      if (file.name.endsWith('.pdf')) {
-        reader.readAsDataURL(file);
       } else if (file.name.endsWith('.txt')) {
-        reader.readAsText(file);
+        textData = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = reject;
+          reader.readAsText(file);
+        });
+        setInitiativeText(textData);
+        setPlagFileBase64('');
       } else {
         setErrorMsg("Hệ thống hiện hỗ trợ tải lên trực tiếp tệp tin .PDF hoặc .TXT. Vui lòng tải lên đúng định dạng.");
-        resolve(); // resolve anyway to avoid hanging
+        setIsExtractingInfo(false);
+        return;
       }
-    });
+    } catch (e: any) {
+      setErrorMsg(`Lỗi khi đọc file: ${e.message}`);
+      setIsExtractingInfo(false);
+      return;
+    }
 
     if (!base64Data && !textData) {
       setIsExtractingInfo(false);
@@ -861,7 +885,7 @@ export default function App() {
         
         setExtractionStep(3); // Mức 3: Hoàn thành
 
-        if (file.name.endsWith('.pdf')) {
+        if (file.name.endsWith('.pdf') && file.size <= 3.5 * 1024 * 1024) {
            setInitiativeText(`📁 Đã nhận diện được tập tin PDF: "${file.name}"\n(Đã tự động điền thông tin Giáo viên. Đang chuẩn bị chuyển tab...)`);
         }
         
@@ -871,12 +895,17 @@ export default function App() {
           setMainTab('plagiarism');
         }, 1500);
       } else {
-        const errorData = await response.json();
-        const errDetails = getFriendlyErrorMessage(errorData.details || errorData.error || '');
-        if (typeof errDetails === 'string' && errDetails.includes('Quota')) {
-           setErrorMsg(`Trích xuất tự động thất bại: Key đã hết lượt gọi (Quota Exceeded). Vui lòng điền thêm API Key dự phòng 😢`);
+        if (response.status === 413) {
+           setErrorMsg(`Trích xuất tự động thất bại: File tải lên quá lớn (Vượt giới hạn 4.5MB của Vercel). Vui lòng nén file PDF hoặc chuyển sang chế độ Copy/Paste.`);
         } else {
-           setErrorMsg(`Trích xuất thông tin tự động thất bại: ${errDetails}`);
+           let errorData;
+           try { errorData = await response.json(); } catch (e) { errorData = { error: `Lỗi máy chủ (${response.status})` }; }
+           const errDetails = getFriendlyErrorMessage(errorData?.details || errorData?.error || '');
+           if (typeof errDetails === 'string' && errDetails.includes('Quota')) {
+              setErrorMsg(`Trích xuất tự động thất bại: Key đã hết lượt gọi (Quota Exceeded). Vui lòng điền thêm API Key dự phòng 😢`);
+           } else {
+              setErrorMsg(`Trích xuất thông tin tự động thất bại: ${errDetails}`);
+           }
         }
         setIsExtractingInfo(false);
       }

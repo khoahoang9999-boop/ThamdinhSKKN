@@ -86,3 +86,8 @@
     border: none !important;
   }
 }
+
+/* Hide Vercel Toolbar in Preview/Production */
+va-toolbar, .vercel-toolbar, #vercel-toolbar-wrapper {
+  display: none !important;
+}
