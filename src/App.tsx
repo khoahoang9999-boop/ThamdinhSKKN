@@ -86,8 +86,11 @@ export default function App() {
   
   const [apiKeys, setApiKeys] = useState<string[]>(['', '', '']);
   const [visibleKeys, setVisibleKeys] = useState<Record<number, boolean>>({});
-  const [selectedModel, setSelectedModel] = useState('gemini-3.5-flash');
   
+  const [selectedModelAppraisal, setSelectedModelAppraisal] = useState('gemini-3.5-flash');
+  const [selectedModelPlag, setSelectedModelPlag] = useState('gemini-3.1-flash-lite');
+  const [selectedModelExtract, setSelectedModelExtract] = useState('gemini-3.1-flash-lite');
+
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -548,7 +551,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           apiKeys,
-          model: selectedModel,
+          model: selectedModelAppraisal,
           teacher: {
             ...teacherToEval,
             teacherName: teacherToEval.teacherName?.normalize('NFC') || '',
@@ -697,7 +700,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           apiKeys,
-          model: selectedModel,
+          model: selectedModelPlag,
           text: (plagFileBase64 ? '' : initiativeText).normalize('NFC'),
           fileBase64: plagFileBase64,
           fileName: plagFileName ? plagFileName.normalize('NFC') : ''
@@ -861,7 +864,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           apiKeys,
-          model: selectedModel,
+          model: selectedModelExtract,
           fileName: file.name,
           fileBase64: base64Data,
           text: textData
@@ -1083,10 +1086,28 @@ export default function App() {
               
               {/* Main Content Area */}
               <div>
-                <label className="block text-xs font-bold text-natural-text uppercase mb-1.5 flex items-center justify-between">
-                  <span>Nội dung Sáng kiến hoặc Báo cáo</span>
-                  <span className="text-[11px] text-natural-primary italic uppercase font-bold">PDF / TXT</span>
-                </label>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-2 gap-2">
+                  <label className="text-xs font-bold text-natural-text uppercase flex items-center">
+                    <span>Nội dung Sáng kiến hoặc Báo cáo</span>
+                    <span className="text-[11px] text-natural-primary italic uppercase font-bold ml-2">PDF / TXT</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] font-bold text-natural-muted uppercase tracking-wider">Mô hình AI trích xuất:</label>
+                    <select
+                      value={selectedModelExtract}
+                      onChange={(e) => setSelectedModelExtract(e.target.value)}
+                      className="text-xs font-semibold bg-white border border-amber-300 text-amber-900 rounded-lg px-2 py-1 outline-none w-[160px] shadow-sm"
+                    >
+                      <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Mạnh mẽ nhất)</option>
+                      <option value="gemini-pro">Gemini Pro Latest</option>
+                      <option value="gemini-3.5-flash">Gemini 3.5 Flash (Cân bằng, Rất ổn định)</option>
+                      <option value="gemini-3.0-flash-preview">Gemini 3 Flash Preview (Thử nghiệm)</option>
+                      <option value="gemini-flash">Gemini Flash Latest</option>
+                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (Thế hệ trước)</option>
+                      <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Nhanh nhất, Khuyên dùng)</option>
+                    </select>
+                  </div>
+                </div>
                 
                 {/* File Upload Area */}
                 <div 
@@ -1637,6 +1658,24 @@ export default function App() {
                     <div className="text-sm font-medium text-natural-muted text-center italic">
                       Chưa có kết quả Thẩm định điểm cho tệp này.
                     </div>
+                    
+                    <div className="flex flex-col items-center gap-2 mb-2">
+                       <label className="text-[10px] font-bold text-natural-muted uppercase tracking-wider">Mô hình AI sử dụng:</label>
+                       <select
+                          value={selectedModelAppraisal}
+                          onChange={(e) => setSelectedModelAppraisal(e.target.value)}
+                          className="text-xs font-semibold bg-white border border-amber-300 text-amber-900 rounded-lg px-3 py-1.5 outline-none w-[220px] shadow-sm"
+                        >
+                          <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Mạnh mẽ nhất)</option>
+                          <option value="gemini-pro">Gemini Pro Latest</option>
+                          <option value="gemini-3.5-flash">Gemini 3.5 Flash (Cân bằng, Rất ổn định)</option>
+                          <option value="gemini-3.0-flash-preview">Gemini 3 Flash Preview (Thử nghiệm)</option>
+                          <option value="gemini-flash">Gemini Flash Latest</option>
+                          <option value="gemini-2.5-flash">Gemini 2.5 Flash (Thế hệ trước)</option>
+                          <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Nhanh nhất, Khuyên dùng)</option>
+                        </select>
+                    </div>
+
                     <button
                       type="button"
                       onClick={handleStartAppraisalOnly}
@@ -1674,8 +1713,32 @@ export default function App() {
 
                     {/* Right Pane: AI & Spelling Results / Action */}
                     <div className="w-full md:w-[45%] flex flex-col bg-white">
-                      <div className="p-3 border-b border-natural-border bg-[#faf9f5] shrink-0 flex items-center justify-between">
-                         <span className="text-xs font-bold text-natural-text uppercase">Phân tích Nội dung</span>
+                      <div className="p-3 border-b border-natural-border bg-[#faf9f5] shrink-0 flex items-center justify-between gap-2">
+                         <span className="text-xs font-bold text-natural-text uppercase shrink-0">Phân tích Nội dung</span>
+                         <div className="flex items-center gap-1.5">
+                           <select
+                              value={selectedModelPlag}
+                              onChange={(e) => setSelectedModelPlag(e.target.value)}
+                              className="text-[10px] font-semibold bg-white border border-amber-300 text-amber-900 rounded px-1.5 py-1 outline-none min-w-[120px] shadow-sm max-w-[140px] truncate"
+                            >
+                              <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Mạnh mẽ nhất)</option>
+                              <option value="gemini-pro">Gemini Pro Latest</option>
+                              <option value="gemini-3.5-flash">Gemini 3.5 Flash (Cân bằng, Rất ổn định)</option>
+                              <option value="gemini-3.0-flash-preview">Gemini 3 Flash Preview (Thử nghiệm)</option>
+                              <option value="gemini-flash">Gemini Flash Latest</option>
+                              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Thế hệ trước)</option>
+                              <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Nhanh nhất, Khuyên dùng)</option>
+                            </select>
+                            {plagResult && (
+                              <button
+                                onClick={() => handleStartPlagiarismCheckOnly()}
+                                disabled={isLoading}
+                                className="text-[10px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 px-2 py-1 rounded shadow-sm flex items-center gap-1 whitespace-nowrap disabled:opacity-50"
+                              >
+                                <RefreshCw className="w-3 h-3" /> Quét lại
+                              </button>
+                            )}
+                         </div>
                       </div>
                       
                       {!plagResult ? (
@@ -2197,22 +2260,9 @@ export default function App() {
             <div className="flex flex-col gap-2">
               <h4 className="text-[13px] font-bold text-amber-900 uppercase tracking-wider flex items-center justify-between">
                 <span className="flex items-center gap-1.5"><Key className="w-5 h-5" /> Provider: Mô hình Trí tuệ Nhân tạo</span>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="text-xs font-semibold bg-white border border-amber-300 text-amber-900 rounded-lg px-3 py-1.5 outline-none w-[200px]"
-                >
-                  <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Mạnh mẽ nhất)</option>
-                  <option value="gemini-pro">Gemini Pro Latest</option>
-                  <option value="gemini-3.5-flash">Gemini 3.5 Flash (Cân bằng, Rất ổn định)</option>
-                  <option value="gemini-3.0-flash-preview">Gemini 3 Flash Preview (Thử nghiệm)</option>
-                  <option value="gemini-flash">Gemini Flash Latest</option>
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Thế hệ trước)</option>
-                  <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Nhanh nhất, Khuyên dùng)</option>
-                </select>
               </h4>
               <p className="text-[12px] text-amber-800 leading-relaxed bg-amber-100/50 p-3 rounded-lg border border-amber-200/50 mt-1">
-                Hệ thống mặc định sử dụng <strong>Gemini 3.1 Flash Lite</strong> để tiết kiệm Quota nhất. Để không bị lỗi Quota Error, lưu ý: <strong>Bạn nên lấy API Key từ các tài khoản Google (Gmail) khác nhau hoàn toàn!</strong>
+                Lưu ý để không bị lỗi Quota Error: <strong>Bạn nên lấy API Key từ các tài khoản Google (Gmail) khác nhau hoàn toàn!</strong> Việc chọn model cho từng tác vụ đã được di chuyển sang các tab chức năng tương ứng.
               </p>
             </div>
 
