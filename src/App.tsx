@@ -40,7 +40,8 @@ import {
   Check,
   Loader2,
   Settings,
-  LogOut
+  LogOut,
+  Link
 } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { PlagiarismResult, PlagiarismSource, PlagiarismSegment, EvaluationResult, TeacherInfo } from './types';
@@ -1694,37 +1695,106 @@ export default function App() {
                       ) : (
                         <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto custom-scrollbar">
                           <div className="flex flex-col gap-3 bg-natural-accent/20 p-4 rounded-xl border border-natural-border font-sans shrink-0">
-                            <h4 className="text-xs font-bold text-natural-primary uppercase border-b border-natural-border pb-1.5">Tổng hợp quét Đạo văn & AI</h4>
+                            <h4 className="text-xs font-bold text-natural-primary uppercase border-b border-natural-border pb-1.5">Tổng hợp quét Đạo văn, AI & Chính tả</h4>
                             
-                            <div className="flex items-center gap-4">
-                              <div className="relative w-16 h-16 flex items-center justify-center shrink-0">
-                                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                                  <circle cx="50" cy="50" r="40" stroke="#e5e7eb" strokeWidth="8" fill="transparent" />
-                                  <circle 
-                                    cx="50" cy="50" r="40" 
-                                    stroke={plagResult.totalDuplicatePercent > 25 ? "#dc2626" : "#8b8b68"} 
-                                    strokeWidth="8" fill="transparent" 
-                                    strokeDasharray={`${2 * Math.PI * 40}`}
-                                    strokeDashoffset={`${2 * Math.PI * 40 * (1 - plagResult.totalDuplicatePercent / 100)}`}
-                                    strokeLinecap="round"
-                                  />
-                                </svg>
-                                <div className="absolute flex flex-col items-center">
-                                  <span className="text-[13px] font-black text-natural-primary font-mono">{plagResult.totalDuplicatePercent}%</span>
-                                  <span className="text-[6px] text-natural-muted font-bold uppercase uppercase">Trùng lặp</span>
+                            <div className="grid grid-cols-3 gap-3">
+                              {/* Đạo văn Circle */}
+                              <div className="flex flex-col items-center bg-white p-2.5 rounded-xl border border-natural-border/60 shadow-sm">
+                                <div className="relative w-14 h-14 flex items-center justify-center">
+                                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                                    <circle cx="50" cy="50" r="40" stroke="#e5e7eb" strokeWidth="8" fill="transparent" />
+                                    <circle 
+                                      cx="50" cy="50" r="40" 
+                                      stroke={plagResult.totalDuplicatePercent > 25 ? "#dc2626" : "#8b8b68"} 
+                                      strokeWidth="8" fill="transparent" 
+                                      strokeDasharray={`${2 * Math.PI * 40}`}
+                                      strokeDashoffset={`${2 * Math.PI * 40 * (1 - plagResult.totalDuplicatePercent / 100)}`}
+                                      strokeLinecap="round"
+                                    />
+                                  </svg>
+                                  <div className="absolute flex flex-col items-center">
+                                    <span className={`text-[12px] font-black font-mono ${plagResult.totalDuplicatePercent > 25 ? 'text-red-600' : 'text-natural-primary'}`}>{plagResult.totalDuplicatePercent}%</span>
+                                  </div>
                                 </div>
+                                <span className="text-[10px] font-bold mt-2 text-natural-text text-center leading-tight">Đạo văn<br/>(Trùng lặp)</span>
                               </div>
-                              <div className="flex-1">
-                                <p className="text-sm font-semibold text-natural-text text-purple-700 flex items-center justify-between">
-                                  Khả năng do AI viết: <span className="font-bold font-mono text-xs bg-purple-100 px-2 py-0.5 rounded">{plagResult.aiGeneratedPercent !== undefined ? `${plagResult.aiGeneratedPercent}%` : 'Chưa phát hiện'}</span>
-                                </p>
-                                <p className="text-xs font-semibold text-natural-text mt-1">Cảnh báo đạo văn: <span className={plagResult.totalDuplicatePercent > 25 ? 'font-bold text-red-600' : 'font-bold text-natural-primary'}>{plagResult.warningLevel}</span></p>
+
+                              {/* AI Circle */}
+                              <div className="flex flex-col items-center bg-white p-2.5 rounded-xl border border-natural-border/60 shadow-sm">
+                                <div className="relative w-14 h-14 flex items-center justify-center">
+                                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                                    <circle cx="50" cy="50" r="40" stroke="#f3e8ff" strokeWidth="8" fill="transparent" />
+                                    <circle 
+                                      cx="50" cy="50" r="40" 
+                                      stroke="#9333ea" 
+                                      strokeWidth="8" fill="transparent" 
+                                      strokeDasharray={`${2 * Math.PI * 40}`}
+                                      strokeDashoffset={`${2 * Math.PI * 40 * (1 - (plagResult.aiGeneratedPercent || 0) / 100)}`}
+                                      strokeLinecap="round"
+                                    />
+                                  </svg>
+                                  <div className="absolute flex flex-col items-center">
+                                    <span className="text-[12px] font-black text-purple-700 font-mono">{plagResult.aiGeneratedPercent || 0}%</span>
+                                  </div>
+                                </div>
+                                <span className="text-[10px] font-bold mt-2 text-purple-800 text-center leading-tight">Sử dụng<br/>AI viết</span>
+                              </div>
+
+                              {/* Chính tả Circle */}
+                              <div className="flex flex-col items-center bg-white p-2.5 rounded-xl border border-natural-border/60 shadow-sm">
+                                <div className="relative w-14 h-14 flex items-center justify-center">
+                                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                                    <circle cx="50" cy="50" r="40" stroke="#ffedd5" strokeWidth="8" fill="transparent" />
+                                    <circle 
+                                      cx="50" cy="50" r="40" 
+                                      stroke="#ea580c" 
+                                      strokeWidth="8" fill="transparent" 
+                                      strokeDasharray={`${2 * Math.PI * 40}`}
+                                      strokeDashoffset={`${2 * Math.PI * 40 * (1 - Math.min(100, ((plagResult.spellingErrors?.length || 0) / Math.max(1, (plagResult.extractedText?.split(/\s+/).length || 1))) * 100 * 5) / 100)}`}
+                                      strokeLinecap="round"
+                                    />
+                                  </svg>
+                                  <div className="absolute flex flex-col items-center">
+                                    <span className="text-[12px] font-black text-orange-600 font-mono">
+                                      {plagResult.spellingErrors?.length ? ((plagResult.spellingErrors.length / Math.max(1, plagResult.extractedText?.split(/\s+/).length || 1)) * 100).toFixed(1) : 0}%
+                                    </span>
+                                  </div>
+                                </div>
+                                <span className="text-[10px] font-bold mt-2 text-orange-700 text-center leading-tight">Lỗi chính tả<br/>({plagResult.spellingErrors?.length || 0} lỗi)</span>
                               </div>
                             </div>
                             
-                            <p className="text-[10px] text-natural-muted leading-relaxed mt-1">
-                              Hệ thống phân tích cú pháp để đánh giá Sáng kiến này dựa trên lượng tài liệu khổng lồ trên Internet và kiểm tra nội dung do AI tạo.
-                            </p>
+                            <div className="mt-1 bg-white p-3 rounded-lg border border-natural-border shadow-sm">
+                              <p className="text-xs font-semibold text-natural-text flex items-center justify-between">
+                                Kết luận: 
+                                <span className={`font-bold px-2 py-1 rounded-md text-white ${plagResult.totalDuplicatePercent > 25 || (plagResult.aiGeneratedPercent || 0) > 20 ? 'bg-red-600' : 'bg-[#5a5a40]'}`}>
+                                  {plagResult.totalDuplicatePercent > 25 || (plagResult.aiGeneratedPercent || 0) > 20 ? 'Không đạt yêu cầu' : 'Đạt yêu cầu (An toàn)'}
+                                </span>
+                              </p>
+                              <p className="text-[10px] text-natural-muted mt-2 border-t border-natural-border pt-2 italic">
+                                {plagResult.warningLevel} - Hệ thống phân tích văn bản qua kho dữ liệu khổng lồ và nhận diện ngôn ngữ AI.
+                              </p>
+                            </div>
+                            
+                            {plagResult.aiSegments && plagResult.aiSegments.length > 0 && (
+                              <div className="mt-3 bg-purple-50 p-2 rounded-lg border border-purple-100">
+                                <span className="text-[10px] font-bold text-purple-800 uppercase tracking-wider block mb-1">
+                                  Dấu hiệu AI sinh (Nghi ngờ):
+                                </span>
+                                <ul className="list-disc pl-3 space-y-1">
+                                  {plagResult.aiSegments.slice(0, 2).map((aiText, idx) => (
+                                    <li key={idx} className="text-[9px] text-purple-700 italic line-clamp-3">
+                                      "{aiText}"
+                                    </li>
+                                  ))}
+                                  {plagResult.aiSegments.length > 2 && (
+                                    <li className="text-[9px] text-purple-600 font-medium list-none italic mt-1">
+                                      + {plagResult.aiSegments.length - 2} đoạn khác...
+                                    </li>
+                                  )}
+                                </ul>
+                              </div>
+                            )}
                           </div>
 
                           {(plagResult.spellingErrors && plagResult.spellingErrors.length > 0) ? (
@@ -1789,7 +1859,7 @@ export default function App() {
                                           <span className="inline-flex items-center justify-center bg-red-500 text-white rounded-sm text-[11px] font-bold px-1.5 py-0.5 mr-1 shrink-0">
                                             {idx + 1}
                                           </span>
-                                          <div className="space-y-0.5">
+                                          <div className="space-y-0.5 w-full overflow-hidden">
                                             <p className="text-[11px] font-bold text-[#4d4d38] leading-tight line-clamp-2" title={title}>
                                               {src.match_percent ?? src.percent}% - {title || src.name}
                                             </p>
@@ -1798,6 +1868,26 @@ export default function App() {
                                                 <>Tác giả: {src.detailed_source.author}</>
                                               )}
                                             </p>
+                                            <div className="flex items-center gap-1.5 mt-1">
+                                              <Link className="w-3 h-3 text-blue-500 shrink-0" />
+                                              <a
+                                                href={
+                                                  (hasDetailed && src.detailed_source?.exact_url && (!src.detailed_source.exact_url.includes('sangkienkinhnghiem.net') && !src.detailed_source.exact_url.includes('giaoan.link')))
+                                                  ? src.detailed_source.exact_url 
+                                                  : `https://www.google.com/search?q=${encodeURIComponent(`"${src.detailed_source?.matched_snippet || src.name}"`)}`
+                                                }
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="text-[9px] text-blue-600 hover:text-blue-800 hover:underline truncate block w-[160px] sm:w-[200px]"
+                                                title={(hasDetailed && src.detailed_source?.exact_url && (!src.detailed_source.exact_url.includes('sangkienkinhnghiem.net') && !src.detailed_source.exact_url.includes('giaoan.link')))
+                                                  ? src.detailed_source.exact_url 
+                                                  : `https://www.google.com/search?q=${encodeURIComponent(`"${src.detailed_source?.matched_snippet || src.name}"`)}`}
+                                              >
+                                                {(hasDetailed && src.detailed_source?.exact_url && (!src.detailed_source.exact_url.includes('sangkienkinhnghiem.net') && !src.detailed_source.exact_url.includes('giaoan.link')))
+                                                  ? src.detailed_source.exact_url 
+                                                  : `https://www.google.com/search?q=${encodeURIComponent(`"${src.detailed_source?.matched_snippet || src.name}"`)}`}
+                                              </a>
+                                            </div>
                                           </div>
                                         </div>
                                         <a
@@ -2619,6 +2709,19 @@ export default function App() {
                     <div>
                       <strong>2. Tỷ lệ văn bản do AI sinh (Nghi ngờ): </strong>
                       <span className="font-bold text-purple-700">{plagResult ? `${plagResult.aiGeneratedPercent || 0}%` : 'Chưa phân tích'}</span>
+                      {plagResult?.aiSegments && plagResult.aiSegments.length > 0 && (
+                        <div className="mt-2 text-[12px] text-purple-900 bg-purple-50 p-2 border border-purple-100 rounded">
+                           <strong className="block mb-1">Dấu hiệu vi phạm:</strong>
+                           <ul className="list-disc pl-4 space-y-1">
+                              {plagResult.aiSegments.slice(0, 3).map((aiText, idx) => (
+                                <li key={idx} className="italic line-clamp-2">"... {aiText} ..."</li>
+                              ))}
+                              {plagResult.aiSegments.length > 3 && (
+                                <li className="font-medium list-none italic mt-1 text-purple-700">+ {plagResult.aiSegments.length - 3} đoạn khác...</li>
+                              )}
+                           </ul>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="mt-4">
