@@ -47,10 +47,11 @@ import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { HighlightedText } from './components/HighlightedText';
 import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { extractTextFromPDFFile } from './utils/pdfExtract';
 
 // Setup PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 // Helpers
 const renderList = (lines?: string[], defaultText = ".......................................................................................................................................................................................") => {
