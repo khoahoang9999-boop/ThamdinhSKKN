@@ -50,7 +50,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { extractTextFromPDFFile } from './utils/pdfExtract';
 
 // Setup PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 // Helpers
 const renderList = (lines?: string[], defaultText = ".......................................................................................................................................................................................") => {
