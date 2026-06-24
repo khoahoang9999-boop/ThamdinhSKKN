@@ -806,6 +806,9 @@ export default function App() {
         if (file.size > 3.5 * 1024 * 1024) { // > 3.5MB
           setInitiativeText(`📁 Đang đọc PDF lớn ("${file.name}")...`);
           textData = await extractTextFromPDFFile(file);
+          if (!textData || textData.trim() === '') {
+            throw new Error('Không tìm thấy chữ trong PDF (Có thể đây là PDF dạng ảnh/scan). Vui lòng dùng file PDF chứa văn bản hoặc file dưới 3.5MB để hệ thống tự phân tích ảnh.');
+          }
           setInitiativeText(textData);
           setPlagFileBase64(''); // Đánh dấu không có base64
         } else {

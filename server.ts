@@ -292,7 +292,7 @@ Lưu ý quan trọng: Tên tác giả (người viết), chức vụ, đơn vị
       });
       contents.push({ text: `Trích xuất thông tin hành chính từ trang bìa của file PDF "${fileName || 'skkn.pdf'}".` });
     } else {
-      contents.push({ text: `Trích xuất thông tin hành chính từ văn bản bên dưới:\n\n"""\n${text}\n"""` });
+      contents.push({ text: `Trích xuất thông tin hành chính từ văn bản bên dưới:\n\n"""\n${text.substring(0, 10000)}\n"""` });
     }
 
     const parsedResult = await executeWithKeys(apiKeys, async (ai) => {
@@ -365,7 +365,6 @@ Bắt buộc trả về đúng định dạng JSON có cấu trúc sau:
   "totalDuplicatePercent": 24.5,
   "aiGeneratedPercent": 15.0,
   "warningLevel": "Vi phạm nhẹ",
-  "extractedText": "[BẮT BUỘC TRẢ LẠI TOÀN BỘ VĂN BẢN (KHÔNG ĐƯỢC LƯỢC BỎ BẤT KỲ CÂU NÀO) để hiển thị người dùng...]",
   "extractedTitle": "...",
   "extractedAuthor": "...",
   "extractedSchool": "...",
@@ -443,7 +442,6 @@ ${text}
 {
   "totalDuplicatePercent": 24.5,
   "warningLevel": "Vi phạm nhẹ",
-  "extractedText": "[BẮT BUỘC TRẢ LẠI TOÀN BỘ VĂN BẢN (KHÔNG ĐƯỢC LƯỢC BỎ BẤT KỲ CÂU NÀO) để hiển thị người dùng...]",
   "extractedTitle": "...",
   "extractedAuthor": "...",
   "extractedSchool": "...",
