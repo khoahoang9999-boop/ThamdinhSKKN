@@ -1797,7 +1797,7 @@ export default function App() {
                             )}
                           </div>
 
-                          {(plagResult.spellingErrors && plagResult.spellingErrors.length > 0) ? (
+                          {(plagResult.spellingErrors && plagResult.spellingErrors.length > 0) && (
                             <div className="space-y-2">
                               <span className="text-[11px] font-bold text-natural-muted uppercase tracking-wider block">
                                 Lỗi chính tả đề xuất ({plagResult.spellingErrors.length}):
@@ -1815,10 +1815,6 @@ export default function App() {
                                   </div>
                                 ))}
                               </div>
-                            </div>
-                          ) : (
-                            <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-emerald-800 text-xs font-bold text-center">
-                              ✅ Không phát hiện lỗi chính tả!
                             </div>
                           )}
 
