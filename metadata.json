@@ -1,0 +1,8 @@
+{
+  "name": "Trợ lý Thẩm định Sáng kiến Hàm Yên 15/6/2026",
+  "description": "Hệ thống trợ lý thẩm định, đánh giá sơ bộ Báo cáo Sáng kiến kinh nghiệm ngành giáo dục huyện Hàm Yên, Tuyên Quang.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
