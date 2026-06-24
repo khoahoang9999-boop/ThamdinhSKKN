@@ -39,7 +39,8 @@ import {
   ArrowRight,
   Check,
   Loader2,
-  Settings
+  Settings,
+  LogOut
 } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { PlagiarismResult, PlagiarismSource, PlagiarismSegment, EvaluationResult, TeacherInfo } from './types';
@@ -49,6 +50,7 @@ import { HighlightedText } from './components/HighlightedText';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { extractTextFromPDFFile } from './utils/pdfExtract';
+import LoginScreen from './components/LoginScreen';
 
 // Setup PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -88,6 +90,8 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   
   // Evaluation History
   const [history, setHistory] = useState<EvaluationResult[]>([]);
@@ -967,6 +971,10 @@ export default function App() {
     }
   };
 
+  if (!isAuthenticated) {
+    return <LoginScreen onLogin={() => setIsAuthenticated(true)} />;
+  }
+
   return (
     <div id="app-workspace" className="min-h-screen bg-natural-bg text-natural-text font-sans flex flex-col selection:bg-natural-accent border-[12px] border-natural-border md:border-[16px] print-force-static">
       
@@ -988,9 +996,19 @@ export default function App() {
           </div>
           
           <div className="flex flex-col md:items-end text-center md:text-right gap-1">
-            <div className="bg-white/10 backdrop-blur-sm border border-white/20 px-3.5 py-1.5 rounded-lg text-xs font-mono flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
-              Thẩm định online: <span className="text-natural-border font-bold">Quyết định 270/QĐ-HĐSK</span>
+            <div className="flex items-center gap-3">
+              <div className="bg-white/10 backdrop-blur-sm border border-white/20 px-3.5 py-1.5 rounded-lg text-xs font-mono flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
+                Thẩm định online: <span className="text-natural-border font-bold">Quyết định 270/QĐ-HĐSK</span>
+              </div>
+              <button
+                onClick={() => setIsAuthenticated(false)}
+                className="bg-red-500/20 hover:bg-red-500/30 text-white border border-red-500/50 px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors"
+                title="Đăng xuất"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Đăng xuất</span>
+              </button>
             </div>
             <p className="text-[11px] text-white/80">
               Cơ quan Thường trực: Sở Khoa học và Công nghệ tỉnh Tuyên Quang
