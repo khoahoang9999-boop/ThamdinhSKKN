@@ -67,7 +67,10 @@ export interface DetailedSource {
   document_title: string;
   author: string;
   exact_url: string;
+  alternative_urls?: string[];
   matched_snippet: string;
+  search_keywords?: string;
+  website_name?: string;
 }
 
 export interface PlagiarismSource {

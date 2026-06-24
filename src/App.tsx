@@ -810,14 +810,29 @@ export default function App() {
     
     try {
       if (file.name.endsWith('.pdf')) {
-        // Fallback for large files to avoid Vercel 4.5MB limit: extract text on client
-        if (file.size > 3.5 * 1024 * 1024) { // > 3.5MB
-          setInitiativeText(`📁 Đang đọc PDF lớn ("${file.name}")...`);
-          textData = await extractTextFromPDFFile(file);
-          if (!textData || textData.trim() === '') {
-            throw new Error('Không tìm thấy chữ trong PDF (Có thể đây là PDF dạng ảnh/scan). Vui lòng dùng file PDF chứa văn bản hoặc file dưới 3.5MB để hệ thống tự phân tích ảnh.');
+        setInitiativeText(`📁 Đang đọc và định dạng văn bản từ PDF ("${file.name}")...`);
+        textData = await extractTextFromPDFFile(file);
+        if (!textData || textData.trim() === '') {
+          throw new Error('Không tìm thấy chữ trong PDF (Có thể đây là PDF dạng ảnh/scan). Vui lòng dùng file PDF chứa văn bản để hệ thống có thể phân tích.');
+        }
+        setInitiativeText('🔄 Đang định dạng văn bản bằng AI (Markdown)...');
+        try {
+          const formatRes = await fetch('/api/format-markdown', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: textData, apiKeys, model: selectedModelPlag })
+          });
+          const formatData = await formatRes.json();
+          if (formatData.formattedText) {
+              textData = formatData.formattedText;
           }
-          setInitiativeText(textData);
+        } catch(e) {
+          console.error('Format Markdown Error:', e);
+        }
+        setInitiativeText(textData);
+        
+        // Fallback for large files to avoid Vercel 4.5MB limit: only pass text to server
+        if (file.size > 3.5 * 1024 * 1024) { // > 3.5MB
           setPlagFileBase64(''); // Đánh dấu không có base64
         } else {
           // Standard base64 parsing for smaller files
@@ -828,7 +843,6 @@ export default function App() {
             reader.readAsDataURL(file);
           });
           setPlagFileBase64(base64Data);
-          setInitiativeText(`📁 Đã nhận diện được tập tin PDF: "${file.name}"\n(Đang trích xuất tự động thông tin tác giả...)`);
         }
       } else if (file.name.endsWith('.txt')) {
         textData = await new Promise<string>((resolve, reject) => {
@@ -1924,43 +1938,83 @@ export default function App() {
                                             </p>
                                             <p className="text-[9px] text-natural-muted">
                                               {hasDetailed && src.detailed_source && src.detailed_source.author && src.detailed_source.author !== 'Ẩn danh' && !src.detailed_source.author.includes('Không xác định') && (
-                                                <>Tác giả: {src.detailed_source.author}</>
+                                                <span className="mr-2">Tác giả: {src.detailed_source.author}</span>
+                                              )}
+                                              {hasDetailed && src.detailed_source?.website_name && (
+                                                <span>Nguồn: {src.detailed_source.website_name}</span>
                                               )}
                                             </p>
-                                            <div className="flex items-center gap-1.5 mt-1">
-                                              <Link className="w-3 h-3 text-blue-500 shrink-0" />
-                                              <a
-                                                href={
-                                                  (hasDetailed && src.detailed_source?.exact_url && (!src.detailed_source.exact_url.includes('sangkienkinhnghiem.net') && !src.detailed_source.exact_url.includes('giaoan.link')))
-                                                  ? src.detailed_source.exact_url 
-                                                  : `https://www.google.com/search?q=${encodeURIComponent(`"${src.detailed_source?.matched_snippet || src.name}"`)}`
+                                            {(() => {
+                                              const exactUrlOk = hasDetailed && src.detailed_source?.exact_url && (!src.detailed_source.exact_url.includes('sangkienkinhnghiem.net') && !src.detailed_source.exact_url.includes('giaoan.link'));
+                                              const searchUrl = src.detailed_source?.search_keywords ? `https://www.google.com/search?q=${encodeURIComponent(src.detailed_source.search_keywords)}` : null;
+                                              let linkToShow = exactUrlOk ? src.detailed_source!.exact_url : searchUrl;
+                                              if (exactUrlOk && src.detailed_source?.matched_snippet) {
+                                                linkToShow += `#:~:text=${encodeURIComponent(src.detailed_source.matched_snippet)}`;
+                                              }
+                                              
+                                              const alternativeUrls = src.detailed_source?.alternative_urls || [];
+                                              
+                                              if (!linkToShow && alternativeUrls.length === 0) {
+                                                return (
+                                                  <div className="flex items-center gap-1.5 mt-1">
+                                                    <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 truncate w-[160px] sm:w-[250px]" title="Nguồn minh chứng từ Kho tri thức Số ngành Giáo dục">
+                                                      Nguồn minh chứng từ Kho tri thức Số ngành Giáo dục
+                                                    </span>
+                                                  </div>
+                                                );
+                                              }
+                                              
+                                              const allLinks = [];
+                                              if (linkToShow) {
+                                                allLinks.push({ url: linkToShow, label: 'Nguồn chính' });
+                                              }
+                                              alternativeUrls.forEach((url, i) => {
+                                                if (url && typeof url === 'string' && url.trim().startsWith('http')) {
+                                                  allLinks.push({ url: url.trim(), label: `Minh chứng ${i + 1}` });
                                                 }
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="text-[9px] text-blue-600 hover:text-blue-800 hover:underline truncate block w-[160px] sm:w-[200px]"
-                                                title={(hasDetailed && src.detailed_source?.exact_url && (!src.detailed_source.exact_url.includes('sangkienkinhnghiem.net') && !src.detailed_source.exact_url.includes('giaoan.link')))
-                                                  ? src.detailed_source.exact_url 
-                                                  : `https://www.google.com/search?q=${encodeURIComponent(`"${src.detailed_source?.matched_snippet || src.name}"`)}`}
-                                              >
-                                                {(hasDetailed && src.detailed_source?.exact_url && (!src.detailed_source.exact_url.includes('sangkienkinhnghiem.net') && !src.detailed_source.exact_url.includes('giaoan.link')))
-                                                  ? src.detailed_source.exact_url 
-                                                  : `https://www.google.com/search?q=${encodeURIComponent(`"${src.detailed_source?.matched_snippet || src.name}"`)}`}
-                                              </a>
-                                            </div>
+                                              });
+
+                                              return (
+                                                <div className="flex flex-col gap-1 mt-1">
+                                                  {allLinks.map((item, i) => (
+                                                    <div key={i} className="flex items-center gap-1.5">
+                                                      <Link className="w-3 h-3 text-blue-500 shrink-0" />
+                                                      <span className="text-[9px] font-bold text-blue-800 shrink-0">{item.label}:</span>
+                                                      <a
+                                                        href={item.url}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-[9px] text-blue-600 hover:text-blue-800 hover:underline truncate block w-[120px] sm:w-[160px]"
+                                                        title={item.url}
+                                                      >
+                                                        {item.url}
+                                                      </a>
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              );
+                                            })()}
                                           </div>
                                         </div>
-                                        <a
-                                          href={
-                                            (hasDetailed && src.detailed_source?.exact_url && (!src.detailed_source.exact_url.includes('sangkienkinhnghiem.net') && !src.detailed_source.exact_url.includes('giaoan.link')))
-                                            ? src.detailed_source.exact_url 
-                                            : `https://www.google.com/search?q=${encodeURIComponent(`"${src.detailed_source?.matched_snippet || src.name}"`)}`
+                                        {(() => {
+                                          const exactUrlOk = hasDetailed && src.detailed_source?.exact_url && (!src.detailed_source.exact_url.includes('sangkienkinhnghiem.net') && !src.detailed_source.exact_url.includes('giaoan.link'));
+                                          const searchUrl = src.detailed_source?.search_keywords ? `https://www.google.com/search?q=${encodeURIComponent(src.detailed_source.search_keywords)}` : null;
+                                          let linkToShow = exactUrlOk ? src.detailed_source!.exact_url : searchUrl;
+                                          if (exactUrlOk && src.detailed_source?.matched_snippet) {
+                                            linkToShow += `#:~:text=${encodeURIComponent(src.detailed_source.matched_snippet)}`;
                                           }
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="shrink-0 text-[10px] font-bold text-natural-primary uppercase bg-white border border-natural-border rounded px-2 py-1 flex items-center gap-1 hover:bg-natural-primary hover:text-white transition"
-                                        >
-                                          <ExternalLink className="w-3 h-3" /> NGUỒN
-                                        </a>
+                                          if (!linkToShow) return null;
+                                          return (
+                                          <a
+                                            href={linkToShow}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="shrink-0 text-[10px] font-bold text-natural-primary uppercase bg-white border border-natural-border rounded px-2 py-1 flex items-center gap-1 hover:bg-natural-primary hover:text-white transition"
+                                          >
+                                            <ExternalLink className="w-3 h-3" /> {exactUrlOk ? 'NGUỒN' : 'TÌM KIẾM'}
+                                          </a>
+                                          );
+                                        })()}
                                       </div>
                                       {hasDetailed && src.detailed_source?.matched_snippet && (
                                         <div className="mt-1 pl-6">
@@ -2738,13 +2792,38 @@ export default function App() {
                            <strong className="block mb-1">Nguồn vi phạm nổi bật:</strong>
                            <ul className="list-disc pl-4 space-y-1">
                               {plagResult.sources.slice(0, 3).map((src, idx) => {
-                                const isGoogleSearch = src.detailed_source?.exact_url?.includes('google.com/search');
-                                const finalUrl = isGoogleSearch ? src.detailed_source?.exact_url : `https://www.google.com/search?q=${encodeURIComponent(`"${src.detailed_source?.matched_snippet || src.name}"`)}`;
+                                const exactUrlOk = src.detailed_source?.exact_url && !src.detailed_source.exact_url.includes('sangkienkinhnghiem.net') && !src.detailed_source.exact_url.includes('giaoan.link');
+                                const searchUrl = src.detailed_source?.search_keywords ? `https://www.google.com/search?q=${encodeURIComponent(src.detailed_source.search_keywords)}` : null;
+                                let finalUrl = exactUrlOk ? src.detailed_source!.exact_url : searchUrl;
+                                if (exactUrlOk && src.detailed_source?.matched_snippet) {
+                                  finalUrl += `#:~:text=${encodeURIComponent(src.detailed_source.matched_snippet)}`;
+                                }
+                                
+                                const alternativeUrls = src.detailed_source?.alternative_urls || [];
+                                const allLinksForPrint = [];
+                                if (finalUrl) allLinksForPrint.push({ url: finalUrl, label: 'Nguồn chính' });
+                                alternativeUrls.forEach((url, i) => {
+                                  if (url && typeof url === 'string' && url.trim().startsWith('http')) {
+                                    allLinksForPrint.push({ url: url.trim(), label: `Minh chứng ${i + 1}` });
+                                  }
+                                });
+
                                 return (
                                 <li key={idx}>
                                   <span className="font-semibold">{src.detailed_source?.document_title || src.name}</span> ({src.match_percent ?? src.percent}%)
                                   {src.detailed_source?.author && !src.detailed_source.author.includes('Không xác định') && ` - Tác giả: ${src.detailed_source.author}`}
-                                  {finalUrl && <><br/>URL: <a href={finalUrl} target="_blank" rel="noreferrer" className="text-blue-600 underline break-all">{finalUrl}</a></>}
+                                  {src.detailed_source?.website_name && ` - Nguồn: ${src.detailed_source.website_name}`}
+                                  {allLinksForPrint.length > 0 ? (
+                                    <div className="mt-1 space-y-1">
+                                      {allLinksForPrint.map((lnk, i) => (
+                                        <div key={i}>
+                                          <span className="font-semibold text-blue-800">{lnk.label}:</span> <a href={lnk.url} target="_blank" rel="noreferrer" className="text-blue-600 underline break-all">{lnk.url}</a>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <><br/><span className="text-emerald-700 italic border border-emerald-200 bg-emerald-50 px-1 rounded inline-block mt-0.5">Nguồn: Kho tri thức Số ngành Giáo dục</span></>
+                                  )}
                                   {src.detailed_source?.matched_snippet && <div className="italic text-gray-600 mt-0.5 bg-gray-50 p-1 border border-gray-200 rounded">"... {src.detailed_source.matched_snippet} ..."</div>}
                                 </li>
                               )})}

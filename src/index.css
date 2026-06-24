@@ -91,3 +91,40 @@
 va-toolbar, .vercel-toolbar, #vercel-toolbar-wrapper {
   display: none !important;
 }
+
+/* HƯỚNG DẪN ĐỒNG BỘ CSS TRÊN APP (ĐỂ ĐẸP NHƯ VĂN BẢN HÀNH CHÍNH) */
+.preview-box {
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 30px; /* Tạo lề rộng rãi như lề trang in */
+  font-family: "Times New Roman", Times, serif; /* Ép đúng font chữ chuẩn */
+  font-size: 14pt; /* Cỡ chữ chuẩn sáng kiến */
+  line-height: 1.5; /* Giãn dòng 1.5 lines chuẩn */
+  color: #1e293b;
+  text-align: justify; /* Căn đều hai bên thẳng tắp như Word */
+  max-height: 750px;
+  overflow-y: auto;
+}
+
+/* Khoảng cách giữa các đoạn văn */
+.preview-box p {
+  margin-bottom: 12px;
+  text-indent: 1.27cm; /* Thụt lề đầu dòng dòng đầu tiên của đoạn văn */
+}
+
+/* Định dạng bảng biểu hiển thị trong bản xem trước */
+.preview-box table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+}
+.preview-box th, .preview-box td {
+  border: 1px solid #64748b;
+  padding: 8px 12px;
+  text-align: left;
+}
+.preview-box th {
+  background-color: #f1f5f9;
+  font-weight: bold;
+}

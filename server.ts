@@ -354,8 +354,11 @@ Nhiệm vụ của bạn là:
 HƯỚNG DẪN HOẠT ĐỘNG:
 1. Tách văn bản thành chuỗi phân đoạn liên tục.
 2. Rà soát từng phân đoạn trùng lặp, bỏ qua lý luận chung. Đánh dấu isDuplicate: true nếu có trùng lặp.
-3. CHỈ ĐÁNH DẤU LÀ ĐẠO VĂN (isDuplicate: true) NẾU PHÁT HIỆN MỘT ĐOẠN VĂN RẤT DÀI (Ít nhất 40-50 từ liên tục hoặc 3-4 câu) ĐƯỢC SAO CHÉP Y HỆT từ một tài liệu cụ thể trên internet. BỎ QUA HOÀN TOÀN các câu ngắn, các định nghĩa, lý luận chung chung, các câu tiêu đề, mục tiêu giáo dục, tên đề tài, các cụm từ chuyên môn sư phạm quen thuộc (VD: "Lớp học hạnh phúc...", "Giúp trẻ thích nghi..."). TUYỆT ĐỐI KHÔNG BẮT LỖI TRÙNG LẶP CHO CÁC ĐOẠN NGẮN mang tính chất giới thiệu hoặc các câu nói phổ biến. Nếu không chắc chắn 100% là copy y hệt từ nguồn cụ thể, thì KHÔNG đánh dấu là đạo văn.
-4. TÌM RA THÔNG TIN CỤ THỂ của các tài liệu gốc (Tên học liệu, phần nội dung của tài liệu gốc bị Đạo văn dán vào \`matched_snippet\`). BẮT BUỘC cung cấp \`exact_url\` (đường link thực tế) của bài viết gốc nếu có. Trích dẫn \`matched_snippet\` CẦN CHÍNH XÁC Y HỆT đoạn văn đã bị copy. KHÔNG đưa ra các nguồn chung chung hoặc không có thật.
+3. CHỈ ĐÁNH DẤU LÀ ĐẠO VĂN (isDuplicate: true) NẾU PHÁT HIỆN MỘT ĐOẠN VĂN RẤT DÀI (khoảng 5 dòng trở lên, hoặc tương đương trên 70-80 từ liên tục) ĐƯỢC SAO CHÉP Y HỆT từ một tài liệu cụ thể. BỎ QUA HOÀN TOÀN (KHÔNG ĐÁNH DẤU LÀ ĐẠO VĂN) ĐỐI VỚI CÁC ĐOẠN NGẮN HƠN 5 DÒNG. BỎ QUA HOÀN TOÀN các câu định nghĩa, lý luận chung chung, các câu tiêu đề, mục tiêu giáo dục, tên đề tài, các cụm từ chuyên môn sư phạm quen thuộc. Các câu văn mang tính chất liệt kê mục tiêu phát triển của trẻ em KHÔNG PHẢI LÀ ĐẠO VĂN. NẾU KHÔNG NHỚ RA HOẶC TÌM ĐƯỢC "TÊN TÀI LIỆU", THÌ TUYỆT ĐỐI KHÔNG ĐƯỢC ĐÁNH DẤU LÀ ĐẠO VĂN.
+4. TRÍCH XUẤT THÔNG TIN NGUỒN NGHIÊM NGẶT: Bạn hãy dùng kiến thức đã học để đối chiếu nguồn gốc của đoạn văn (hoặc đưa ra gợi ý sát nhất). YÊU CẦU TRÍCH XUẤT NHƯ SAU:
+   - KHÔNG được trả về trang chủ chung chung (Ví dụ: Không được ghi thuvienhoclieu.com hay violet.vn).
+   - BẮT BUỘC phải cố gắng đưa ra Tiêu đề cụ thể của chính bài viết, file giáo án hoặc tài liệu chứa đoạn văn đó (Ví dụ: "Sáng kiến kinh nghiệm môn Khoa học tự nhiên 8 - Phân môn Vật lý").
+   - Nếu bạn biết được đường link trực tiếp (URL cụ thể) dẫn đến bài viết hoặc file đính kèm đó thì cung cấp. Nếu không chắc chắn, BẠN CÓ THỂ ĐỂ TRỐNG ĐƯỜNG LINK VÀ HỆ THỐNG SẼ TỰ HIỂN THỊ NGUỒN MINH CHỨNG TỪ KHO TRI THỨC. Tuy nhiên vẫn bị tính là đạo văn miễn là bạn cung cấp được Tiêu đề tài liệu ở trên.
 5. Kiểm tra lỗi chính tả: Ghi nhận các lỗi ngữ pháp, lỗi đánh máy rõ ràng. KHÔNG tính các từ ngữ chuyên môn (ví dụ trong Tin học, Toán học...).
 6. Phát hiện AI CHUYÊN SÂU: Quét và phân tích kỹ lưỡng từng câu văn để phát hiện các dấu hiệu sinh tự động (AI-generated). Nhận diện các đoạn văn có cấu trúc khuôn mẫu, sáo rỗng, lặp ý, sử dụng từ ngữ đao to búa lớn đặc trưng của AI (ChatGPT, Gemini, Claude...). Ước lượng tỷ lệ % nội dung được viết bởi AI một cách khắt khe. Nếu đoạn nào bị nghi ngờ cao do AI viết, trích xuất chính xác vào mảng \`aiSegments\`.
 7. Đánh giá Mức cảnh báo (warningLevel): Đánh giá mức độ vi phạm dựa trên tỷ lệ trùng lặp. Lưu ý quy định: Tỷ lệ trùng lặp không được vượt quá 30%. Nếu tổng tỷ lệ trùng lặp > 30%, ghi "Vi phạm quy định (trên 30%)". Nếu <= 30%, ghi "Đạt yêu cầu (dưới 30%)".
@@ -382,9 +385,12 @@ Bắt buộc trả về đúng định dạng JSON có cấu trúc sau:
     "is_matched": true,
     "match_percent": 12.5,
     "detailed_source": {
-      "document_title": "Tên sách giáo khoa / Tên sáng kiến gốc / Tên bài báo gốc...",
+      "document_title": "BẮT BUỘC: Điền tên tiêu đề cụ thể của tài liệu bị trùng từ kết quả Google Search (Ví dụ: Sáng kiến kinh nghiệm mầm non 5-6 tuổi...)",
+      "website_name": "Tên trang web, ví dụ: Thư Viện Học Liệu, Violet, ...",
       "author": "NẾU TÌM ĐƯỢC TÊN TÁC GIẢ CHÍNH XÁC thì ghi. NẾU KHÔNG THÌ GHI LÀ 'Không xác định', tuyệt đối không được tự bịa ra tin tác giả.",
-      "exact_url": "BẮT BUỘC TRẢ VỀ ĐƯỜNG DẪN GOOGLE SEARCH TÌM KIẾM CHÍNH XÁC MỘT ĐOẠN VĂN DÀI TRONG NGOẶC KÉP. Mẫu: https://www.google.com/search?q=\\"Trích một đoạn văn dài ít nhất 15 từ từ nội dung gửi vào để minh chứng trùng lặp\\".",
+      "exact_url": "NẾU BẠN NHỚ RÕ VÀ CHÍNH XÁC đường dẫn trực tiếp đến bài viết/tài liệu thì điền vào. NẾU KHÔNG CHẮC CHẮN 100%, TUYỆT ĐỐI KHÔNG TỰ BỊA LINK VÀ ĐỂ TRỐNG TRƯỜNG NÀY (TRẢ VỀ ''). Hệ thống sẽ tự động hiển thị là Nguồn từ Kho tri thức.",
+      "alternative_urls": ["BẮT BUỘC: Cung cấp 1 mảng chứa ít nhất 2 đường dẫn (URLs) khác để minh chứng. TUYỆT ĐỐI KHÔNG BỊA LINK. Nếu không nhớ link bài viết chính xác 100%, BẮT BUỘC phải tạo các ĐƯỜNG DẪN TÌM KIẾM GOOGLE (có dạng https://www.google.com/search?q=từ+khóa) để thay thế."],
+      "search_keywords": "BẮT BUỘC TRÍCH XUẤT 1 chuỗi từ khóa cốt lõi (5-8 từ) có tính đặc trưng cao nhất từ đoạn văn bị trùng lặp, đã loại bỏ từ phổ thông. Ví dụ: 'chuẩn bị thể chất nhận thức ngôn ngữ'",
       "matched_snippet": "Bắt buộc trích ĐÚNG NGUYÊN VĂN một đoạn dài ít nhất 15 từ từ bài viết được kiểm tra mà bạn cho là đạo văn. Phải giống y hệt từng chữ để người dùng đối chiếu."
     }
   }],
@@ -459,9 +465,12 @@ ${text}
     "is_matched": true,
     "match_percent": 12.5,
     "detailed_source": {
-      "document_title": "Giáo án Hoạt động trải nghiệm hướng nghiệp 8...",
+      "document_title": "BẮT BUỘC: Điền tên tiêu đề cụ thể của tài liệu bị trùng từ kết quả Google Search (Ví dụ: Giáo án Hoạt động trải nghiệm hướng nghiệp 8...)",
+      "website_name": "Tên trang web, ví dụ: Thư Viện Học Liệu, Violet, ...",
       "author": "NẾU TÌM ĐƯỢC TÊN TÁC GIẢ CHÍNH XÁC thì ghi. NẾU KHÔNG THÌ GHI LÀ 'Không xác định', tuyệt đối không được tự bịa ra tin tác giả.",
-      "exact_url": "BẮT BUỘC TRẢ VỀ ĐƯỜNG DẪN GOOGLE SEARCH TÌM KIẾM CHÍNH XÁC MỘT ĐOẠN VĂN DÀI TRONG NGOẶC KÉP. Mẫu: https://www.google.com/search?q=\\"Trích một đoạn văn dài ít nhất 15 từ từ nội dung gửi vào để minh chứng trùng lặp\\".",
+      "exact_url": "NẾU BẠN NHỚ RÕ VÀ CHÍNH XÁC đường dẫn trực tiếp đến bài viết/tài liệu thì điền vào. NẾU KHÔNG CHẮC CHẮN 100%, TUYỆT ĐỐI KHÔNG TỰ BỊA LINK VÀ ĐỂ TRỐNG TRƯỜNG NÀY (TRẢ VỀ ''). Hệ thống sẽ tự động hiển thị là Nguồn từ Kho tri thức.",
+      "alternative_urls": ["BẮT BUỘC: Cung cấp 1 mảng chứa ít nhất 2 đường dẫn (URLs) khác để minh chứng. TUYỆT ĐỐI KHÔNG BỊA LINK. Nếu không nhớ link bài viết chính xác 100%, BẮT BUỘC phải tạo các ĐƯỜNG DẪN TÌM KIẾM GOOGLE (có dạng https://www.google.com/search?q=từ+khóa) để thay thế."],
+      "search_keywords": "BẮT BUỘC TRÍCH XUẤT 1 chuỗi từ khóa cốt lõi (5-8 từ) có tính đặc trưng cao nhất từ đoạn văn bị trùng lặp, đã loại bỏ từ phổ thông. Ví dụ: 'chuẩn bị thể chất nhận thức ngôn ngữ'",
       "matched_snippet": "Bắt buộc trích ĐÚNG NGUYÊN VĂN một đoạn dài ít nhất 15 từ từ bài viết được kiểm tra mà bạn cho là đạo văn. Phải giống y hệt từng chữ để người dùng đối chiếu."
     }
   }],
@@ -478,7 +487,6 @@ ${text}
   ]
 }
 Lưu ý: Chỉ trả về JSON, KHÔNG BỔ SUNG BẤT KỲ VĂN BẢN NÀO KHÁC. Đảm bảo bóc tách đoạn văn nghi ngờ AI tạo vào mảng aiSegments nếu aiGeneratedPercent > 0.`,
-          responseMimeType: 'application/json'
         }
       });
 
@@ -524,7 +532,62 @@ async function startServer() {
   }
 
   if (!process.env.VERCEL) {
-    app.listen(PORT, '0.0.0.0', () => {
+    app.post('/api/format-markdown', async (req, res) => {
+  try {
+    const { text, apiKeys, model } = req.body;
+    if (!text) {
+      return res.status(400).json({ error: 'Missing text' });
+    }
+    
+    // We only process if there are API keys, otherwise return original text
+    if (!apiKeys || !Array.isArray(apiKeys) || apiKeys.length === 0) {
+      return res.json({ formattedText: text });
+    }
+
+    const targetModel = model || 'gemini-3.5-flash';
+
+    const systemInstruction = `Ý THỨC VAI TRÒ:
+Bạn là module xử lý giao diện chuyên sâu của Hệ thống chấm Sáng kiến kinh nghiệm (Hội đồng xã Hàm Yên). 
+
+NHIỆM VỤ CỦA BẠN:
+Đọc văn bản thô được trích xuất từ file PDF, thực hiện dọn rác kỹ thuật và chuyển đổi thành định dạng Markdown (.md) chuẩn để làm bản xem trước (Preview) cho Giám khảo.
+
+CÁC YÊU CẦU BẮT BUỘC KHÔNG ĐƯỢC VI PHẠM (ĐỂ GIỮ NGUYÊN BẢN FILE WORD):
+1. GIỮ NGUYÊN BẢN NỘI DUNG: Tuyệt đối không được tóm tắt, không tự ý lược bỏ câu chữ, không viết lại văn phong của tác giả. Giữ nguyên 100% nội dung chữ.
+2. LỌC BỎ HÌNH ẢNH VÀ KÝ TỰ RÁC: Chỉ lọc bỏ các đoạn text mô tả ảnh (nếu có), các mã ký tự lạ xuất hiện do lỗi convert từ PDF sang. ĐẶC BIỆT LƯU Ý: Khắc phục lỗi khoảng trắng thừa giữa các chữ cái (ví dụ: 't r ẻ' phải sửa thành 'trẻ', 'm ộ t' sửa thành 'một', 'đ ể' sửa thành 'để'). BẮT BUỘC ghép các chữ cái bị rời rạc thành từ hoàn chỉnh có nghĩa.
+3. KHÔI PHỤC CẤU TRÚC TIÊU ĐỀ (HEADING): Nhận diện các mục lớn nhỏ để định dạng chuẩn:
+   - Tên cơ quan, quốc hiệu, tiêu đề chính: Căn giữa (sử dụng cặp thẻ <center>...</center>).
+   - Mục lớn (I, II, III, Chương I, Chương II): Sử dụng ký hiệu \`##\`
+   - Mục nhỏ (1., 2., a), b)): Sử dụng ký hiệu \`###\` hoặc \`####\`
+4. DỰNG LẠI BẢNG BIỂU CHUẨN MƯỢT: Nếu văn bản thô có chứa các dòng dữ liệu dạng bảng (ngăn cách bởi dấu phẩy hoặc hàng lối), bạn BẮT BUỘC phải dựng lại thành định dạng Bảng Markdown (Markdown Table) để hiển thị hàng lối rõ ràng như file Word gốc.
+5. NGẮT ĐOẠN RÕ RÀNG: Giữa các đoạn văn phải có một dòng trống để giao diện không bị dính chữ vào nhau.
+
+Chỉ trả về nội dung chuỗi Markdown sạch sau khi xử lý cấu trúc, KHÔNG giải thích, KHÔNG thêm bớt từ ngữ ngoài văn bản gốc.`;
+
+    const promptText = `Nội dung văn bản thô từ file PDF cần định dạng:\n\n"""\n${text}\n"""`;
+
+    const parsedResult = await executeWithKeys(apiKeys, async (ai) => {
+      const response = await ai.models.generateContent({
+        model: targetModel,
+        contents: [{ text: promptText }],
+        config: {
+          systemInstruction,
+        }
+      });
+
+      let resultText = response.text || '';
+      resultText = resultText.replace(/^```markdown\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
+      return { formattedText: resultText };
+    });
+
+    res.json(parsedResult);
+  } catch (error: any) {
+    console.error('Format Markdown Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.listen(PORT, '0.0.0.0', () => {
       console.log(`[Hàm Yên SDK] Server is running on http://0.0.0.0:${PORT}`);
     });
   }
