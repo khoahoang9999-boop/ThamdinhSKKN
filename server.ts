@@ -361,7 +361,7 @@ NỘI DUNG NHIỆM VỤ Chuyên sâu:
 3. KIỂM TRA TRÙNG LẶP, ĐẠO VĂN (MỨC ĐỘ KHẮT KHE):
 - Tách văn bản thành chuỗi phân đoạn liên tục.
 - Rà soát từng phân đoạn trùng lặp, bỏ qua lý luận chung, định nghĩa, cơ sở pháp lý, và các câu chuyển tiếp.
-- CHỈ ĐÁNH DẤU LÀ ĐẠO VĂN NẾU PHÁT HIỆN SỰ TRÙNG LẶP LIÊN TỤC VÀ KÉO DÀI. TUYỆT ĐỐI KHÔNG TÍNH ĐẠO VĂN đối với các đoạn ngắn (như 2-3 dòng, hoặc dưới 70 từ) vì đây thường là ngôn ngữ chung hoặc trích dẫn. Chỉ đánh dấu isDuplicate: true nếu đoạn sao chép liên tục từ 4-5 dòng trở lên.
+- CHỈ ĐÁNH DẤU LÀ ĐẠO VĂN NẾU PHÁT HIỆN SỰ TRÙNG LẶP LIÊN TỤC VÀ KÉO DÀI. TUYỆT ĐỐI KHÔNG TÍNH ĐẠO VĂN đối với các đoạn ngắn (như dưới 7-8 dòng, hoặc dưới 100 từ) vì đây thường là ngôn ngữ chung, lý luận chung hoặc trích dẫn. Chỉ đánh dấu isDuplicate: true nếu đoạn sao chép nguyên văn liên tục từ 8 dòng trở lên, hoặc các khu vực có nội dung tương tự liên quan đến cùng một đường link có dấu hiệu đạo văn.
 - TRÍCH XUẤT THÔNG TIN NGUỒN NGHIÊM NGẶT vào mảng \`sources\`: KHÔNG được trả về trang chủ chung chung. BẮT BUỘC đưa ra Tiêu đề cụ thể của chính bài viết, file giáo án chứa đoạn văn đó. (Chỉ lấy nguồn cụ thể).
 - Đánh giá Mức cảnh báo (warningLevel): Tỷ lệ trùng lặp không được vượt quá 30%. Nếu tổng tỷ lệ > 30%, ghi "Vi phạm quy định (trên 30%)". Nếu <= 30%, ghi "Đạt yêu cầu (dưới 30%)".
 
