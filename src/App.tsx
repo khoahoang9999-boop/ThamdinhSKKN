@@ -17,6 +17,8 @@ import {
   Calendar, 
   Building, 
   Clock, 
+  Phone,
+  Mail, 
   Sparkles, 
   History, 
   ChevronRight, 
@@ -25,6 +27,7 @@ import {
   RefreshCw, 
   Bookmark, 
   Trash2,
+  Pencil,
   FileDown,
   FileUp,
   ExternalLink,
@@ -46,7 +49,7 @@ import {
   Download
 } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
-import { PlagiarismResult, PlagiarismSource, PlagiarismSegment, EvaluationResult, TeacherInfo } from './types';
+import { PlagiarismResult, PlagiarismSource, PlagiarismSegment, EvaluationResult, TeacherInfo, CouncilMember, CouncilEvaluationResult } from './types';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { asBlob } from 'html-docx-js-typescript';
@@ -83,12 +86,32 @@ export default function App() {
     role: '',
     schoolName: '',
     stage: 'Tiểu học',
-    subject: ''
+    subject: '',
+    phone: '',
+    email: ''
   });
   
   const [initiativeTitle, setInitiativeTitle] = useState('');
   const [appliedDate, setAppliedDate] = useState('2026-06-11');
   const [initiativeText, setInitiativeText] = useState('');
+
+  // Council appraisal committee member states
+  const [councilName, setCouncilName] = useState('CỦA THÀNH VIÊN TỔ THẨM ĐỊNH SÁNG KIẾN');
+  const [member1Name, setMember1Name] = useState('');
+  const [member1Unit, setMember1Unit] = useState('');
+  const [member1Role, setMember1Role] = useState('');
+  const [member2Name, setMember2Name] = useState('');
+  const [member2Unit, setMember2Unit] = useState('');
+  const [member2Role, setMember2Role] = useState('');
+  const [member3Name, setMember3Name] = useState('');
+  const [member3Unit, setMember3Unit] = useState('');
+  const [member3Role, setMember3Role] = useState('');
+  
+  const [councilMembers, setCouncilMembers] = useState<CouncilMember[]>([
+    { id: '1', name: '', unit: '', role: '' },
+    { id: '2', name: '', unit: '', role: '' },
+    { id: '3', name: '', unit: '', role: '' },
+  ]);
   
   const [apiKeys, setApiKeys] = useState<string[]>(['', '', '']);
   const [visibleKeys, setVisibleKeys] = useState<Record<number, boolean>>({});
@@ -107,11 +130,18 @@ export default function App() {
   const [history, setHistory] = useState<EvaluationResult[]>([]);
   const [currentResult, setCurrentResult] = useState<EvaluationResult | null>(null);
   
+  // Re-evaluation / Re-grading panel states
+  const [showReAppraisalPanel, setShowReAppraisalPanel] = useState(false);
+  const [desiredScore, setDesiredScore] = useState<number | ''>('');
+  const [reAppraisalNotes, setReAppraisalNotes] = useState('');
+  
   // Active Tab for Legal Handbook / Rubric in LHS
   const [lhsTab, setLhsTab] = useState<'rubric' | 'legal' | 'xml_guide'>('rubric');
   
   // Print Mode Modal
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printTarget, setPrintTarget] = useState<'department' | 'council'>('department');
+  const [activeAppraisalView, setActiveAppraisalView] = useState<'department' | 'council'>('department');
   const printRef = useRef<HTMLDivElement>(null);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [isGeneratingWord, setIsGeneratingWord] = useState(false);
@@ -143,67 +173,336 @@ export default function App() {
   const handleDownloadWord = async () => {
     setIsGeneratingWord(true);
     try {
-      if (!printRef.current) return;
+      if (!currentResult) return;
       
-      let htmlString = printRef.current.innerHTML;
+      const r = currentResult;
+      const isCouncilTarget = printTarget === 'council' && r.councilResult;
+      const srcEval = isCouncilTarget ? r.councilResult! : r;
 
-      // Replace spans with block class to divs so Word natively breaks lines
-      htmlString = htmlString.replace(/<span class="block([^"]*)">([\s\S]*?)<\/span>/g, '<div class="$1">$2</div>');
+      const evalDate = new Date(srcEval.evaluatedAt || r.evaluatedAt || new Date());
+      const dateStr = `Hàm Yên, ngày ${evalDate.getDate()} tháng ${evalDate.getMonth() + 1} năm ${evalDate.getFullYear()}`;
 
-      // Convert HTML structure to Blob with ms-word mime type (Works well for older Office reading)
+      // Custom Appraisal Council details
+      const rCouncilName = r.councilName || councilName || 'CỦA THÀNH VIÊN TỔ THẨM ĐỊNH SÁNG KIẾN';
+      const rCouncilMembers: CouncilMember[] = r.councilMembers || councilMembers || [];
+      const rMember1Name = r.member1Name || member1Name || '';
+      const rMember1Unit = r.member1Unit || member1Unit || '';
+      const rMember1Role = r.member1Role || member1Role || '';
+      const rMember2Name = r.member2Name || member2Name || '';
+      const rMember2Unit = r.member2Unit || member2Unit || '';
+      const rMember2Role = r.member2Role || member2Role || '';
+      const rMember3Name = r.member3Name || member3Name || '';
+      const rMember3Unit = r.member3Unit || member3Unit || '';
+      const rMember3Role = r.member3Role || member3Role || '';
+
+      const hasCustomAppraisalMembers = rCouncilMembers.length > 0 
+        ? rCouncilMembers.some(m => m.name.trim() !== '') 
+        : Boolean(rMember1Name.trim() || rMember2Name.trim() || rMember3Name.trim());
+
+      // Helper to generate list lines for Word
+      const getWordListString = (lines?: string[]) => {
+        if (!lines || lines.length === 0) {
+          return `<p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.45;">.......................................................................................................................................................................................</p>`;
+        }
+        return lines.map(line => {
+          let text = line.trim();
+          if (text.startsWith('-') || text.startsWith('•') || text.startsWith('+')) {
+            text = text.substring(1).trim();
+          }
+          return `<p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.45;">- ${text}</p>`;
+        }).join('');
+      };
+
+      const suCanThietStr = getWordListString(srcEval.suCanThiet?.analysis);
+      const tinhMoiStr = getWordListString(srcEval.tinhMoi?.analysis);
+      const tinhMoiConsStr = srcEval.tinhMoi?.cons && srcEval.tinhMoi.cons.length > 0 
+        ? `<p style="margin-top: 6pt; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.45;"><strong>Hạn chế:</strong></p>${getWordListString(srcEval.tinhMoi.cons)}` 
+        : "";
+
+      const giaiPhapStr = getWordListString(srcEval.giaiPhap?.analysis);
+      const giaiPhapProsStr = srcEval.giaiPhap?.pros && srcEval.giaiPhap.pros.length > 0
+        ? `<p style="margin-top: 6pt; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.45;"><strong>Nhận xét chung:</strong></p>${getWordListString(srcEval.giaiPhap.pros)}`
+        : "";
+      const giaiPhapConsStr = srcEval.giaiPhap?.cons && srcEval.giaiPhap.cons.length > 0
+        ? `<p style="margin-top: 6pt; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.45;"><strong>Hạn chế:</strong></p>${getWordListString(srcEval.giaiPhap.cons)}`
+        : "";
+
+      const hieuQuaStr = getWordListString(srcEval.hieuQua?.analysis);
+      const hieuQuaConsStr = srcEval.hieuQua?.cons && srcEval.hieuQua.cons.length > 0
+        ? `<p style="margin-top: 6pt; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.45;"><strong>Hạn chế:</strong></p>${getWordListString(srcEval.hieuQua.cons)}`
+        : "";
+
+      const khaNangApDungStr = getWordListString(srcEval.khaNangApDung?.analysis);
+      const khaNangApDungConsStr = srcEval.khaNangApDung?.cons && srcEval.khaNangApDung.cons.length > 0
+        ? `<p style="margin-top: 6pt; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.45;"><strong>Hạn chế:</strong></p>${getWordListString(srcEval.khaNangApDung.cons)}`
+        : "";
+
+      const docTitle = isCouncilTarget
+        ? `<div style="text-align: center; margin-bottom: 18pt; margin-top: 12pt;">
+            <p class="bold uppercase" style="font-size: 15pt; text-align: center; margin: 0; font-family: 'Times New Roman', Times, serif; font-weight: bold;">PHIẾU NHẬN XÉT, ĐÁNH GIÁ SÁNG KIẾN</p>
+            <p class="bold uppercase" style="font-size: 14pt; text-align: center; margin: 4pt 0 0 0; font-family: 'Times New Roman', Times, serif; font-weight: bold;">HỘI ĐỒNG THẨM ĐỊNH SÁNG KIẾN</p>
+          </div>`
+        : hasCustomAppraisalMembers ? `
+          <div style="text-align: center; margin-bottom: 18pt; margin-top: 12pt;">
+            <p class="bold uppercase" style="font-size: 15pt; text-align: center; margin: 0; font-family: 'Times New Roman', Times, serif; font-weight: bold;">PHIẾU NHẬN XÉT, ĐÁNH GIÁ SÁNG KIẾN</p>
+            <p class="bold uppercase" style="font-size: 14pt; text-align: center; margin: 4pt 0 0 0; font-family: 'Times New Roman', Times, serif; font-weight: bold;">${rCouncilName}</p>
+          </div>
+          ` : `
+          <div style="text-align: center; margin-bottom: 24pt; margin-top: 12pt;">
+            <p class="bold uppercase" style="font-size: 15pt; text-align: center; margin: 0; font-family: 'Times New Roman', Times, serif; font-weight: bold;">PHIẾU NHẬN XÉT, ĐÁNH GIÁ SÁNG KIẾN</p>
+          </div>
+          `;
+
+      const signerTitle = isCouncilTarget
+        ? "TM. HỘI ĐỒNG THẨM ĐỊNH SÁNG KIẾN"
+        : "NGƯỜI NHẬN XÉT, ĐÁNH GIÁ";
+
       const msWordObj = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-      <head><meta charset='utf-8'><title>Export</title>
-      <style>
-        @page WordSection1 {
-          size: 8.5in 11.0in;
-          margin: 1.0in 1.0in 1.0in 1.0in;
-        }
-        div.WordSection1 { page: WordSection1; }
-        body { font-family: "Times New Roman", Times, serif; font-size: 14pt; padding: 0; margin: 0; line-height: 1.5; }
-        p, div { margin-top: 0; mso-line-height-rule: auto; line-height: 150%; }
-        p { margin-bottom: 6pt; }
-        .space-y-1 > div, .space-y-1 > p { margin-top: 0; margin-bottom: 6pt; }
-        .space-y-2 > div, .space-y-2 > p { margin-top: 0; margin-bottom: 6pt; }
-        .space-y-4 > div, .space-y-4 > p { margin-top: 0; margin-bottom: 6pt; }
-        table { border-collapse: collapse; width: 100%; border: 1px solid black; mso-line-height-rule: exactly; line-height: 100%; }
-        .header-banner div { line-height: 1.0 !important; mso-line-height-rule: exactly !important; margin: 0 !important; }
-        .content-justify, .content-justify p, .content-justify div { text-align: justify; }
-        th, td { border: 1px solid black; padding: 8px; text-align: left; }
-        .font-bold { font-weight: bold; }
-        .text-center { text-align: center; }
-        .uppercase { text-transform: uppercase; }
-        .mb-1 { margin-bottom: 6pt; }
-        .mb-2 { margin-bottom: 6pt; }
-        .mb-4 { margin-bottom: 12pt; }
-        .mb-6 { margin-bottom: 18pt; }
-        .mb-8 { margin-bottom: 24pt; }
-        .mt-1 { margin-top: 6pt; }
-        .mt-2 { margin-top: 6pt; }
-        .mt-4 { margin-top: 12pt; }
-        .mt-6 { margin-top: 18pt; }
-        .my-6 { margin-top: 18pt; margin-bottom: 18pt; }
-        .block { display: block; }
-        h3 { font-size: 16pt; margin: 0; padding: 0;}
-        h2 { font-size: 17pt; margin: 0; padding: 0;}
-        h4 { font-size: 14pt; margin: 0; padding: 0;}
-        .underline { text-decoration: underline; }
-        .italic { font-style: italic; }
-        .text-right { text-align: right; }
-        .text-justify { text-align: justify; line-height: 150%; }
-        .leading-relaxed { line-height: 150%; }
-        .pl-5 { padding-left: 1.5rem; }
-        .ml-4 { margin-left: 1rem; }
-        .ml-2 { margin-left: 0.5rem; }
-        .ml-3 { margin-left: 0.75rem; }
-        .p-4 { padding: 1rem; }
-      </style>
-      </head><body><div class="WordSection1">${htmlString}</div></body></html>`;
+      <head>
+        <meta charset='utf-8'>
+        <title>Phiếu Nhận Xét Đánh Giá Sáng Kiến</title>
+        <style>
+          @page WordSection1 {
+            size: 210mm 297mm;
+            margin-top: 20mm;
+            margin-bottom: 20mm;
+            margin-left: 30mm;
+            margin-right: 15mm;
+          }
+          div.WordSection1 { page: WordSection1; }
+          body {
+            font-family: "Times New Roman", Times, serif;
+            font-size: 14pt;
+            line-height: 1.45;
+            color: #000000;
+          }
+          p, div {
+            margin-top: 0;
+            margin-bottom: 6pt;
+            text-align: justify;
+            font-family: "Times New Roman", Times, serif;
+            font-size: 14pt;
+            line-height: 1.45;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 12pt;
+            font-family: "Times New Roman", Times, serif;
+            font-size: 14pt;
+          }
+          table.border-table {
+            border: 1px solid #000000;
+          }
+          table.border-table th, table.border-table td {
+            border: 1px solid #000000;
+            padding: 6pt;
+          }
+          .text-center { text-align: center; }
+          .text-right { text-align: right; }
+          .bold { font-weight: bold; }
+          .italic { font-style: italic; }
+          .underline { text-decoration: underline; }
+          .uppercase { text-transform: uppercase; }
+        </style>
+      </head>
+      <body>
+        <div class="WordSection1">
+          <!-- TOP BANNER (Quốc hiệu Tiêu ngữ) -->
+          <table style="width: 100%; border: none; margin-bottom: 18pt;">
+            <tr style="border: none;">
+              <td style="width: 100%; text-align: center; border: none; padding: 0;">
+                <p class="bold" style="font-size: 13pt; text-align: center; margin-bottom: 2pt; text-transform: uppercase; font-family: 'Times New Roman', Times, serif;">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
+                <p class="bold" style="font-size: 14pt; text-align: center; margin-bottom: 4pt; font-family: 'Times New Roman', Times, serif;">Độc lập - Tự do - Hạnh phúc</p>
+                <p style="text-align: center; margin-top: 0; margin-bottom: 12pt;">
+                  <span style="border-bottom: 1.5px solid #000000; width: 150px; display: inline-block; height: 1px;"></span>
+                </p>
+              </td>
+            </tr>
+            <tr style="border: none;">
+              <td style="width: 100%; text-align: right; border: none; padding: 0;">
+                <p class="italic" style="font-size: 14pt; text-align: right; margin-top: 6pt; margin-bottom: 0; font-family: 'Times New Roman', Times, serif;">${dateStr}</p>
+              </td>
+            </tr>
+          </table>
 
-      const blob = new Blob(['\ufeff', msWordObj], {
-        type: 'application/msword;charset=utf-8'
-      });
-      saveAs(blob, currentResult ? `PhieuGiamDinh_${currentResult.teacher.teacherName || 'TacGia'}.doc` : 'Phieu_Danh_Gia_SKKN.doc');
+          <!-- DOCUMENT TITLE -->
+          ${docTitle}
+
+          <!-- TEACHER INFORMATION -->
+          ${hasCustomAppraisalMembers ? `
+          <div style="margin-bottom: 18pt; line-height: 1.45;">
+            ${rCouncilMembers.length > 0 ? rCouncilMembers.map((m, idx) => `
+              <p style="margin-top: 0; margin-bottom: 4pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>${idx + 1}. Họ và tên Thành viên ${idx + 1}:</strong> ${m.name || '...................................................'}</p>
+              <p style="margin-top: 0; margin-bottom: 4pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; padding-left: 20px;">- Đơn vị công tác: ${m.unit || '...................................................'}</p>
+              <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; padding-left: 20px;">- Chức vụ: ${m.role || '...................................................'}</p>
+            `).join('') + `
+              <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>${rCouncilMembers.length + 1}. Tên giải pháp đề nghị công nhận sáng kiến:</strong> ${r.initiativeTitle ? `“${r.initiativeTitle}”` : '...................................................'}</p>
+            ` : `
+              <p style="margin-top: 0; margin-bottom: 4pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>1. Họ và tên Thành viên 1:</strong> ${rMember1Name || '...................................................'}</p>
+              <p style="margin-top: 0; margin-bottom: 4pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; padding-left: 20px;">- Đơn vị công tác: ${rMember1Unit || '...................................................'}</p>
+              <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; padding-left: 20px;">- Chức vụ: ${rMember1Role || '...................................................'}</p>
+
+              <p style="margin-top: 0; margin-bottom: 4pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>2. Họ và tên Thành viên 2:</strong> ${rMember2Name || '...................................................'}</p>
+              <p style="margin-top: 0; margin-bottom: 4pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; padding-left: 20px;">- Đơn vị công tác: ${rMember2Unit || '...................................................'}</p>
+              <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; padding-left: 20px;">- Chức vụ: ${rMember2Role || '...................................................'}</p>
+
+              <p style="margin-top: 0; margin-bottom: 4pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>3. Họ và tên Thành viên 3:</strong> ${rMember3Name || '...................................................'}</p>
+              <p style="margin-top: 0; margin-bottom: 4pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; padding-left: 20px;">- Đơn vị công tác: ${rMember3Unit || '...................................................'}</p>
+              <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt; padding-left: 20px;">- Chức vụ: ${rMember3Role || '...................................................'}</p>
+
+              <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>4. Tên giải pháp đề nghị công nhận sáng kiến:</strong> ${r.initiativeTitle ? `“${r.initiativeTitle}”` : '...................................................'}</p>
+            `}
+
+            <p style="margin-top: 12pt; margin-bottom: 4pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;">- Họ và tên Tác giả: ${r.teacher.teacherName || '...................................................'}</p>
+            <p style="margin-top: 0; margin-bottom: 4pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;">- Chức vụ, đơn vị công tác: ${r.teacher.role || '............................'}, ${r.teacher.schoolName || '............................................'}</p>
+            <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;">- Điện thoại: ${r.teacher.phone || '......................................'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Email:</strong> ${r.teacher.email || '..........................'}</p>
+          </div>
+          ` : `
+          <div style="margin-bottom: 18pt; line-height: 1.45;">
+            <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>Họ và tên tác giả:</strong> ${r.teacher.teacherName || '...................................................'}</p>
+            <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>Chức vụ:</strong> ${r.teacher.role || '...................................................'}</p>
+            <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>Đơn vị công tác:</strong> ${r.teacher.schoolName || '...................................................'}</p>
+            <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>Tên sáng kiến:</strong> ${r.initiativeTitle ? `“${r.initiativeTitle}”` : '...................................................'}</p>
+            <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>Lĩnh vực áp dụng:</strong> ${r.teacher.subject || 'Giáo dục mầm non'}</p>
+            <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>Điện thoại:</strong> ${r.teacher.phone || '......................................'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Email:</strong> ${r.teacher.email || '..........................'}</p>
+          </div>
+          `}
+
+          <!-- I. NHẬN XÉT, ĐÁNH GIÁ CHI TIẾT -->
+          <p class="bold uppercase" style="font-size: 14pt; font-weight: bold; margin-top: 18pt; margin-bottom: 12pt; font-family: 'Times New Roman', Times, serif;">I. NHẬN XÉT, ĐÁNH GIÁ CHI TIẾT</p>
+
+          <!-- 1. Sự cần thiết -->
+          <div style="margin-bottom: 12pt;">
+            <p class="bold" style="margin-top: 0; margin-bottom: 4pt; text-transform: uppercase; font-family: 'Times New Roman', Times, serif; font-weight: bold;">1. Về sự cần thiết của sáng kiến</p>
+            <div style="margin-bottom: 4pt;">
+              ${suCanThietStr}
+            </div>
+            <p style="margin-top: 4pt; margin-bottom: 4pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>Điểm: ${srcEval.suCanThiet?.score || 0}/10 điểm</strong></p>
+          </div>
+
+          <!-- 2. Tính mới -->
+          <div style="margin-bottom: 12pt;">
+            <p class="bold" style="margin-top: 0; margin-bottom: 4pt; text-transform: uppercase; font-family: 'Times New Roman', Times, serif; font-weight: bold;">2. Về tính mới, tính sáng tạo của sáng kiến</p>
+            <div style="margin-bottom: 4pt;">
+              ${tinhMoiStr}
+              ${tinhMoiConsStr}
+            </div>
+            <p style="margin-top: 4pt; margin-bottom: 4pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>Điểm: ${srcEval.tinhMoi?.score || 0}/20 điểm</strong></p>
+          </div>
+
+          <!-- 3. Nội dung và giải pháp -->
+          <div style="margin-bottom: 12pt;">
+            <p class="bold" style="margin-top: 0; margin-bottom: 4pt; text-transform: uppercase; font-family: 'Times New Roman', Times, serif; font-weight: bold;">3. Về nội dung và chất lượng các giải pháp</p>
+            <div style="margin-bottom: 4pt;">
+              ${giaiPhapStr}
+              ${giaiPhapProsStr}
+              ${giaiPhapConsStr}
+            </div>
+            <p style="margin-top: 4pt; margin-bottom: 4pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>Điểm: ${srcEval.giaiPhap?.score || 0}/30 điểm</strong></p>
+          </div>
+
+          <!-- 4. Hiệu quả áp dụng -->
+          <div style="margin-bottom: 12pt;">
+            <p class="bold" style="margin-top: 0; margin-bottom: 4pt; text-transform: uppercase; font-family: 'Times New Roman', Times, serif; font-weight: bold;">4. Về hiệu quả áp dụng</p>
+            <div style="margin-bottom: 4pt;">
+              ${hieuQuaStr}
+              ${hieuQuaConsStr}
+            </div>
+            <p style="margin-top: 4pt; margin-bottom: 4pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>Điểm: ${srcEval.hieuQua?.score || 0}/30 điểm</strong></p>
+          </div>
+
+          <!-- 5. Khả năng áp dụng -->
+          <div style="margin-bottom: 12pt;">
+            <p class="bold" style="margin-top: 0; margin-bottom: 4pt; text-transform: uppercase; font-family: 'Times New Roman', Times, serif; font-weight: bold;">5. Về khả năng áp dụng và phạm vi ảnh hưởng</p>
+            <div style="margin-bottom: 4pt;">
+              ${khaNangApDungStr}
+              ${khaNangApDungConsStr}
+            </div>
+            <p style="margin-top: 4pt; margin-bottom: 4pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt;"><strong>Điểm: ${srcEval.khaNangApDung?.score || 0}/10 điểm</strong></p>
+          </div>
+
+          <!-- II. TỔNG HỢP KẾT QUẢ CHẤM ĐIỂM -->
+          <p class="bold uppercase" style="font-size: 14pt; font-weight: bold; margin-top: 18pt; margin-bottom: 12pt; font-family: 'Times New Roman', Times, serif;">II. TỔNG HỢP KẾT QUẢ CHẤM ĐIỂM</p>
+          <table border="1" cellpadding="6" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #000000; margin-bottom: 18pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt;">
+            <thead>
+              <tr style="background-color: #f2f2f2;">
+                <th style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; font-weight: bold; text-align: center;">Nội dung đánh giá</th>
+                <th style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; font-weight: bold; text-align: center; width: 120px;">Điểm tối đa</th>
+                <th style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; font-weight: bold; text-align: center; width: 120px;">Điểm chấm</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: left;">Sự cần thiết của sáng kiến</td>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: center;">10</td>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: center; font-weight: bold;">${srcEval.suCanThiet?.score || 0}</td>
+              </tr>
+              <tr>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: left;">Tính mới, tính sáng tạo</td>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: center;">20</td>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: center; font-weight: bold;">${srcEval.tinhMoi?.score || 0}</td>
+              </tr>
+              <tr>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: left;">Nội dung và giải pháp</td>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: center;">30</td>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: center; font-weight: bold;">${srcEval.giaiPhap?.score || 0}</td>
+              </tr>
+              <tr>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: left;">Hiệu quả áp dụng</td>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: center;">30</td>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: center; font-weight: bold;">${srcEval.hieuQua?.score || 0}</td>
+              </tr>
+              <tr>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: left;">Khả năng áp dụng, phạm vi ảnh hưởng</td>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: center;">10</td>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; text-align: center; font-weight: bold;">${srcEval.khaNangApDung?.score || 0}</td>
+              </tr>
+              <tr style="font-weight: bold;">
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; font-weight: bold; text-align: center;">Tổng cộng</td>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; font-weight: bold; text-align: center;">100</td>
+                <td style="border: 1px solid #000000; padding: 6pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.15; font-weight: bold; text-align: center; color: #900000;">${srcEval.totalScore}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- III. KẾT LUẬN -->
+          <p class="bold uppercase" style="font-size: 14pt; font-weight: bold; margin-top: 18pt; margin-bottom: 12pt; font-family: 'Times New Roman', Times, serif;">III. KẾT LUẬN</p>
+          <div style="line-height: 1.45; margin-bottom: 18pt;">
+            <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;">Sáng kiến: ${r.initiativeTitle ? `“${r.initiativeTitle}”` : '...................................................'} là sáng kiến có giá trị thực tiễn, đáp ứng yêu cầu đổi mới giáo dục mầm non, góp phần nâng cao chất lượng chuẩn bị cho trẻ trước khi vào lớp 1.</p>
+            <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;">Hệ thống giải pháp được xây dựng tương đối đồng bộ, phù hợp với điều kiện thực tế của đơn vị, có khả năng áp dụng rộng rãi tại các cơ sở giáo dục mầm non có điều kiện tương đồng.</p>
+            <p style="margin-top: 0; margin-bottom: 6pt; text-align: justify; font-family: 'Times New Roman', Times, serif; font-size: 14pt;">Tuy nhiên, để nâng cao giá trị khoa học và sức thuyết phục của sáng kiến, tác giả cần bổ sung thêm số liệu định lượng, các bảng đối chứng trước và sau tác động, đồng thời tăng cường minh chứng về phạm vi ảnh hưởng và khả năng nhân rộng.</p>
+            <p class="bold uppercase" style="margin-top: 12pt; margin-bottom: 4pt; font-family: 'Times New Roman', Times, serif; font-weight: bold;">Xếp loại đề nghị: ${srcEval.classification || 'LOẠI KHÁ'}</p>
+            <p class="bold" style="margin-top: 0; margin-bottom: 12pt; font-family: 'Times New Roman', Times, serif;">Tổng điểm: ${srcEval.totalScore}/100 điểm</p>
+          </div>
+
+          <!-- SIGNATURES -->
+          <table style="width: 100%; border: none; margin-top: 24pt; font-family: 'Times New Roman', Times, serif; font-size: 14pt;">
+            <tr style="border: none;">
+              <td style="width: 45%; border: none;"></td>
+              <td style="width: 55%; text-align: center; vertical-align: top; border: none; padding: 0;">
+                <p class="italic" style="font-size: 14pt; text-align: center; margin-bottom: 4pt; font-family: 'Times New Roman', Times, serif;">${dateStr}</p>
+                <p class="bold uppercase" style="font-size: 14pt; text-align: center; margin-bottom: 2pt; font-family: 'Times New Roman', Times, serif; font-weight: bold;">${signerTitle}</p>
+                <p class="italic" style="font-size: 14pt; text-align: center; margin-bottom: 72pt; font-family: 'Times New Roman', Times, serif;">(Ký, ghi rõ họ và tên)</p>
+                <p class="bold" style="font-size: 14pt; text-align: center; margin-top: 0; font-family: 'Times New Roman', Times, serif;">${isCouncilTarget ? 'ỦY VIÊN THƯ KÝ HỘI ĐỒNG' : (reviewerName || '........................................')}</p>
+              </td>
+            </tr>
+          </table>
+        </div>
+      </body>
+      </html>`;
+
+      try {
+        const docxBlob = await asBlob(msWordObj);
+        saveAs(docxBlob as Blob, currentResult ? `PhieuGiamDinh_${currentResult.teacher.teacherName || 'TacGia'}.docx` : 'Phieu_Danh_Gia_SKKN.docx');
+      } catch (err) {
+        console.error('Lỗi khi convert docx bằng html-docx-js-typescript, thực hiện fallback sang doc thô:', err);
+        const blob = new Blob(['\ufeff', msWordObj], {
+          type: 'application/msword;charset=utf-8'
+        });
+        saveAs(blob, currentResult ? `PhieuGiamDinh_${currentResult.teacher.teacherName || 'TacGia'}.doc` : 'Phieu_Danh_Gia_SKKN.doc');
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -216,6 +515,7 @@ export default function App() {
   const [evaluationMode, setEvaluationMode] = useState<'full' | 'comment_only'>('full');
   const [isCouncilAppraisal, setIsCouncilAppraisal] = useState(false);
   const [sortExcelBySchool, setSortExcelBySchool] = useState(false);
+  const [excelIncludeRemarks, setExcelIncludeRemarks] = useState(true);
   const [reviewerName, setReviewerName] = useState('');
 
   // Plagiarism & Duplicate Checker states
@@ -231,6 +531,52 @@ export default function App() {
   const [hoveredSourceId, setHoveredSourceId] = useState<string | null>(null);
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isEditingPlag, setIsEditingPlag] = useState(false);
+
+  const updatePlagiarismDataInResult = (newPlag: PlagiarismResult) => {
+    setPlagResult(newPlag);
+    
+    if (currentResult) {
+      setCurrentResult(prev => {
+        if (!prev) return prev;
+        
+        let baseClass = 'Không đạt';
+        const total = prev.totalScore || 0;
+        if (total >= 90) {
+          baseClass = 'Xuất sắc';
+        } else if (total >= 80) {
+          baseClass = 'Tốt';
+        } else if (total >= 50) {
+          baseClass = 'Khá';
+        } else {
+          baseClass = 'Không đạt';
+        }
+        
+        let finalClass = baseClass;
+        const levelLower = newPlag.warningLevel.toLowerCase();
+        if (levelLower.includes('không đạt') || levelLower.includes('nghiêm trọng') || levelLower.includes('không đạt') || newPlag.totalDuplicatePercent > 30) {
+          finalClass = 'Không đạt (Mức độ vi phạm đạo văn quá quy định)';
+        } else if (newPlag.aiGeneratedPercent !== undefined && newPlag.aiGeneratedPercent > 10) {
+          finalClass = 'Không đạt (Vượt quá giới hạn nội dung AI sinh)';
+        }
+        
+        const updatedRes = {
+          ...prev,
+          classification: finalClass,
+          plagiarismResult: newPlag
+        };
+        
+        // Cập nhật lịch sử đồng bộ
+        setHistory(prevHist => {
+          const updatedHist = prevHist.map(h => h.id === prev.id ? updatedRes : h);
+          syncToFirestore({ history: updatedHist });
+          return updatedHist;
+        });
+        
+        return updatedRes;
+      });
+    }
+  };
 
 
   const [isExtractingInfo, setIsExtractingInfo] = useState(false);
@@ -291,7 +637,7 @@ export default function App() {
     const loadUserData = async () => {
       if (user) {
         try {
-          const docRef = doc(db, 'users', user.uid);
+          const docRef = doc(doc(db, 'users', user.uid).firestore, 'users', user.uid);
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
             const data = docSnap.data();
@@ -306,6 +652,23 @@ export default function App() {
                 if (first.initiativeTitle) setInitiativeTitle(first.initiativeTitle);
                 if (first.appliedDate) setAppliedDate(first.appliedDate);
                 if (first.initiativeText) setInitiativeText(first.initiativeText);
+                setCouncilName(first.councilName || 'CỦA THÀNH VIÊN TỔ THẨM ĐỊNH SÁNG KIẾN');
+                setMember1Name(first.member1Name || '');
+                setMember1Unit(first.member1Unit || '');
+                setMember1Role(first.member1Role || '');
+                setMember2Name(first.member2Name || '');
+                setMember2Unit(first.member2Unit || '');
+                setMember2Role(first.member2Role || '');
+                setMember3Name(first.member3Name || '');
+                setMember3Unit(first.member3Unit || '');
+                setMember3Role(first.member3Role || '');
+                
+                const loadedMembers: CouncilMember[] = first.councilMembers || [
+                  { id: '1', name: first.member1Name || '', unit: first.member1Unit || '', role: first.member1Role || '' },
+                  { id: '2', name: first.member2Name || '', unit: first.member2Unit || '', role: first.member2Role || '' },
+                  { id: '3', name: first.member3Name || '', unit: first.member3Unit || '', role: first.member3Role || '' },
+                ];
+                setCouncilMembers(loadedMembers);
               }
             }
             if (data.apiKeys && Array.isArray(data.apiKeys)) {
@@ -313,6 +676,26 @@ export default function App() {
             }
             if (data.reviewerName) {
               setReviewerName(data.reviewerName);
+            }
+            if (data.councilName !== undefined) setCouncilName(data.councilName);
+            if (data.member1Name !== undefined) setMember1Name(data.member1Name);
+            if (data.member1Unit !== undefined) setMember1Unit(data.member1Unit);
+            if (data.member1Role !== undefined) setMember1Role(data.member1Role);
+            if (data.member2Name !== undefined) setMember2Name(data.member2Name);
+            if (data.member2Unit !== undefined) setMember2Unit(data.member2Unit);
+            if (data.member2Role !== undefined) setMember2Role(data.member2Role);
+            if (data.member3Name !== undefined) setMember3Name(data.member3Name);
+            if (data.member3Unit !== undefined) setMember3Unit(data.member3Unit);
+            if (data.member3Role !== undefined) setMember3Role(data.member3Role);
+
+            if (data.councilMembers && Array.isArray(data.councilMembers)) {
+              setCouncilMembers(data.councilMembers);
+            } else if (data.member1Name !== undefined || data.member2Name !== undefined || data.member3Name !== undefined) {
+              setCouncilMembers([
+                { id: '1', name: data.member1Name || '', unit: data.member1Unit || '', role: data.member1Role || '' },
+                { id: '2', name: data.member2Name || '', unit: data.member2Unit || '', role: data.member2Role || '' },
+                { id: '3', name: data.member3Name || '', unit: data.member3Unit || '', role: data.member3Role || '' },
+              ]);
             }
           }
         } catch (error) {
@@ -325,6 +708,21 @@ export default function App() {
         setPlagResult(null);
         setApiKeys(['']);
         setReviewerName('');
+        setCouncilName('CỦA THÀNH VIÊN TỔ THẨM ĐỊNH SÁNG KIẾN');
+        setMember1Name('');
+        setMember1Unit('');
+        setMember1Role('');
+        setMember2Name('');
+        setMember2Unit('');
+        setMember2Role('');
+        setMember3Name('');
+        setMember3Unit('');
+        setMember3Role('');
+        setCouncilMembers([
+          { id: '1', name: '', unit: '', role: '' },
+          { id: '2', name: '', unit: '', role: '' },
+          { id: '3', name: '', unit: '', role: '' },
+        ]);
       }
     };
     loadUserData();
@@ -466,21 +864,7 @@ export default function App() {
       let isFail = "";
       let totalScore = 0;
       
-      const mScore = h.tinhMoi?.score || 0;
-      const kScore = h.tinhKhoaHoc?.score || 0;
-      const hScore = h.hieuQua?.score || 0;
-      const pScore = h.phamVi?.score || 0;
-      const cScore = h.minhChung?.score || 0;
-      
-      if (h.hieuQua && h.phamVi) {
-        if (h.tinhMoi) {
-          // New format
-          totalScore = mScore + kScore + hScore + pScore + cScore;
-        } else {
-          // Legacy format
-          totalScore = hScore + pScore;
-        }
-      }
+      totalScore = h.totalScore || 0;
 
       if (h.classification) {
         if (h.classification.includes('Không đạt')) {
@@ -496,7 +880,44 @@ export default function App() {
         }
       }
 
-      const vhxhComment = `Tổng điểm: ${totalScore}/100.\nĐánh giá sơ bộ: ${isPass || isFail}`;
+      // Trích xuất ít nhất 2 lời nhận xét chi tiết để ghi vào biểu Excel
+      let remarks: string[] = [];
+      if (h.uuDiem && h.uuDiem.length > 0) {
+        remarks = h.uuDiem.map(u => u.trim().replace(/^-\s*/, '')).filter(u => u.length > 0);
+      }
+      
+      // Nếu chưa đủ 2 nhận xét, lấy thêm từ phần phân tích chi tiết của các tiêu chí
+      if (remarks.length < 2) {
+        const potentialSources = [
+          ...(h.suCanThiet?.analysis || []),
+          ...(h.tinhMoi?.analysis || []),
+          ...(h.giaiPhap?.analysis || []),
+          ...(h.hieuQua?.analysis || []),
+          ...(h.khaNangApDung?.analysis || [])
+        ];
+        potentialSources.forEach(s => {
+          if (remarks.length < 2 && s && s.trim().length > 10) {
+            remarks.push(s.trim());
+          }
+        });
+      }
+      
+      // Nếu vẫn chưa đủ, bổ sung các nhận xét chuyên môn tiêu chuẩn
+      if (remarks.length < 2) {
+        const defaultComments = [
+          "Giải pháp khoa học, thiết thực và có tính khả thi cao tại đơn vị.",
+          "Nội dung trình bày rõ ràng, bám sát các tiêu chuẩn kỹ thuật chuyên môn.",
+          "Đóng góp tích cực vào việc đổi mới phương pháp và nâng cao chất lượng công tác."
+        ];
+        while (remarks.length < 2) {
+          remarks.push(defaultComments[remarks.length]);
+        }
+      }
+
+      const finalRemarks = remarks.slice(0, 2).map((r, i) => `${i + 1}. ${r}`).join('\n');
+      const vhxhComment = excelIncludeRemarks 
+        ? `Tổng điểm: ${totalScore}/100.\nĐánh giá sơ bộ: ${isPass || isFail}.\nNhận xét:\n${finalRemarks}`
+        : `Tổng điểm: ${totalScore}/100.\nĐánh giá sơ bộ: ${isPass || isFail}.`;
       
       const isCouncil = Boolean(isCouncilAppraisal || h.isCouncilAppraisal);
       let councilOpinion = "";
@@ -504,7 +925,9 @@ export default function App() {
       let councilFail = "";
 
       if (isCouncil) {
-        councilOpinion = `Đồng ý với đánh giá sơ bộ.\nTổng điểm: ${totalScore}/100.`;
+        councilOpinion = excelIncludeRemarks
+          ? `Đồng ý với đánh giá sơ bộ.\nTổng điểm: ${totalScore}/100.\nNhận xét:\n${finalRemarks}`
+          : `Đồng ý với đánh giá sơ bộ.\nTổng điểm: ${totalScore}/100.`;
         if (isPass === "Đạt") councilPass = "X";
         if (isFail === "Không đạt") councilFail = "X";
       }
@@ -582,7 +1005,14 @@ export default function App() {
   };
 
   // Internal appraisal calling worker
-  const runAppraisalEvaluation = async (textToEval: string, titleToEval: string, teacherToEval: TeacherInfo, associatedPlagResult?: PlagiarismResult | null) => {
+  const runAppraisalEvaluation = async (
+    textToEval: string,
+    titleToEval: string,
+    teacherToEval: TeacherInfo,
+    associatedPlagResult?: PlagiarismResult | null,
+    requestedScore?: number | null,
+    reEvaluationNotes?: string | null
+  ) => {
     try {
       const response = await fetch('/api/evaluate', {
         method: 'POST',
@@ -603,7 +1033,9 @@ export default function App() {
           fileBase64: plagFileBase64,
           fileName: plagFileName ? plagFileName.normalize('NFC') : '',
           pronoun,
-          evaluationMode
+          evaluationMode,
+          requestedScore,
+          reEvaluationNotes
         })
       });
 
@@ -621,23 +1053,22 @@ export default function App() {
       // Parse new detailed scores
       const calcScore = (obj: any, fallback: number) => Number(obj?.score) || fallback;
       
-      const mScore = calcScore(evalData.tinhMoi, 8);
-      const kScore = calcScore(evalData.tinhKhoaHoc, 12);
-      const cScore = calcScore(evalData.minhChung, 12);
-      const hScore = calcScore(evalData.hieuQua, 32);
-      const pScore = calcScore(evalData.phamVi, 15);
-      const total = mScore + kScore + cScore + hScore + pScore;
+      const sScore = calcScore(evalData.suCanThiet, 8);
+      const mScore = calcScore(evalData.tinhMoi, 16);
+      const gScore = calcScore(evalData.giaiPhap, 24);
+      const hScore = calcScore(evalData.hieuQua, 24);
+      const kScore = calcScore(evalData.khaNangApDung, 8);
+      const total = sScore + mScore + gScore + hScore + kScore;
       
       let finalClass = 'Không đạt';
-      // Mức xếp loại mang tính tương đối (theo user example >= 85 là Khá, có thể >= 90 là Tốt, >= 95 Xuất sắc)
-      // Dựa theo thông tư 18, thường thì Khá từ 65-79, Tốt từ 80-89, Xuất sắc 90-100 (tùy địa phương) 
-      // nhưng cứ xếp Khá là mốc 60-79, Tốt 80-89, Xuất sắc >= 90
-      if (total >= 90 && mScore >= 8 && kScore >= 12 && hScore >= 36 && pScore >= 18) {
+      if (total >= 90) {
         finalClass = 'Xuất sắc';
-      } else if (total >= 80 && mScore >= 7 && kScore >= 10 && hScore >= 32 && pScore >= 15) {
+      } else if (total >= 80) {
         finalClass = 'Tốt';
-      } else if (total >= 50 && mScore >= 5 && kScore >= 8 && hScore >= 20 && pScore >= 10) {
+      } else if (total >= 50) {
         finalClass = 'Khá';
+      } else {
+        finalClass = 'Không đạt';
       }
 
       // Check regulations
@@ -657,9 +1088,11 @@ export default function App() {
         appliedDate,
         initiativeText: textToEval,
         evaluatedAt: new Date().toISOString(),
-        tinhCapThiet: {
-          levelName: evalData.tinhCapThiet?.levelName || '',
-          analysis: evalData.tinhCapThiet?.analysis || []
+        suCanThiet: {
+          score: sScore,
+          levelName: evalData.suCanThiet?.levelName || '',
+          analysis: evalData.suCanThiet?.analysis || [],
+          pros: evalData.suCanThiet?.pros || []
         },
         tinhMoi: {
           score: mScore,
@@ -668,33 +1101,24 @@ export default function App() {
           pros: evalData.tinhMoi?.pros || [],
           cons: evalData.tinhMoi?.cons || []
         },
-        tinhKhoaHoc: {
-          score: kScore,
-          levelName: evalData.tinhKhoaHoc?.levelName || '',
-          analysis: evalData.tinhKhoaHoc?.analysis || [],
-          pros: evalData.tinhKhoaHoc?.pros || [],
-          cons: evalData.tinhKhoaHoc?.cons || []
-        },
-        minhChung: {
-          score: cScore,
-          levelName: evalData.minhChung?.levelName || '',
-          analysis: evalData.minhChung?.analysis || [],
-          pros: evalData.minhChung?.pros || [],
-          cons: evalData.minhChung?.cons || []
+        giaiPhap: {
+          score: gScore,
+          levelName: evalData.giaiPhap?.levelName || '',
+          analysis: evalData.giaiPhap?.analysis || [],
+          pros: evalData.giaiPhap?.pros || [],
+          cons: evalData.giaiPhap?.cons || []
         },
         hieuQua: {
           score: hScore,
           levelName: evalData.hieuQua?.levelName || '',
-          pros: evalData.hieuQua?.pros || [],
-          cons: evalData.hieuQua?.cons || [],
-          analysis: evalData.hieuQua?.analysis || []
+          analysis: evalData.hieuQua?.analysis || [],
+          cons: evalData.hieuQua?.cons || []
         },
-        phamVi: {
-          score: pScore,
-          levelName: evalData.phamVi?.levelName || '',
-          pros: evalData.phamVi?.pros || [],
-          cons: evalData.phamVi?.cons || [],
-          analysis: evalData.phamVi?.analysis || []
+        khaNangApDung: {
+          score: kScore,
+          levelName: evalData.khaNangApDung?.levelName || '',
+          analysis: evalData.khaNangApDung?.analysis || [],
+          cons: evalData.khaNangApDung?.cons || []
         },
         uuDiem: evalData.uuDiem || [],
         hanChe: evalData.hanChe || [],
@@ -705,7 +1129,18 @@ export default function App() {
         pronoun,
         evaluationMode,
         isCouncilAppraisal,
-        plagiarismResult: associatedPlagResult || null
+        plagiarismResult: associatedPlagResult || null,
+        councilName,
+        member1Name,
+        member1Unit,
+        member1Role,
+        member2Name,
+        member2Unit,
+        member2Role,
+        member3Name,
+        member3Unit,
+        member3Role,
+        councilMembers
       };
 
       setCurrentResult(generatedResult);
@@ -764,10 +1199,13 @@ export default function App() {
         extractedText: data.extractedText,
         sources: data.sources || [],
         segments: data.segments || [],
+        aiGeneratedPercent: data.aiGeneratedPercent,
+        aiSegments: data.aiSegments || [],
+        spellingErrors: data.spellingErrors || [],
         checkedAt: new Date().toISOString()
       };
       
-      setPlagResult(instantiatedPlag);
+      updatePlagiarismDataInResult(instantiatedPlag);
       
       let finalTitle = initiativeTitle;
       if (data.extractedTitle && !initiativeTitle) {
@@ -806,6 +1244,286 @@ export default function App() {
       );
     } catch (e: any) {
       setErrorMsg(`Quá trình phân tích thẩm định thất bại: ${e.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleTriggerReEvaluation = async () => {
+    if (!currentResult) return;
+    setIsLoading(true);
+    setLoadingMessageIndex(0);
+    setErrorMsg(null);
+    try {
+      const textToUse = initiativeText || currentResult.initiativeText || (plagResult?.extractedText || "Sáng kiến kinh nghiệm");
+      const titleToUse = initiativeTitle || currentResult.initiativeTitle || "Sáng kiến kinh nghiệm";
+      const teacherToUse = teacher || currentResult.teacher;
+
+      const isCouncil = activeAppraisalView === 'council';
+
+      const response = await fetch('/api/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKeys,
+          model: selectedModelAppraisal,
+          teacher: {
+            ...teacherToUse,
+            teacherName: teacherToUse.teacherName?.normalize('NFC') || '',
+            schoolName: teacherToUse.schoolName?.normalize('NFC') || '',
+            role: teacherToUse.role?.normalize('NFC') || '',
+            subject: teacherToUse.subject?.normalize('NFC') || ''
+          },
+          initiativeTitle: titleToUse.normalize('NFC'),
+          appliedDate,
+          initiativeText: textToUse.normalize('NFC'),
+          fileBase64: plagFileBase64,
+          fileName: plagFileName ? plagFileName.normalize('NFC') : '',
+          pronoun,
+          evaluationMode,
+          requestedScore: desiredScore === '' ? null : desiredScore,
+          reEvaluationNotes: reAppraisalNotes === '' ? null : reAppraisalNotes,
+          evaluateTarget: isCouncil ? 'council' : 'department'
+        })
+      });
+
+      if (!response.ok) {
+        let errData;
+        try { errData = await response.json(); } catch (e) { throw new Error(`Lỗi máy chủ (${response.status}): ${response.statusText}`); }
+        throw new Error(getFriendlyErrorMessage(errData?.details || errData?.error || 'Lỗi hệ thống'));
+      }
+
+      const evalData = await response.json();
+      
+      const calcScore = (obj: any, fallback: number) => Number(obj?.score) || fallback;
+      const sScore = calcScore(evalData.suCanThiet, 8);
+      const mScore = calcScore(evalData.tinhMoi, 16);
+      const gScore = calcScore(evalData.giaiPhap, 24);
+      const hScore = calcScore(evalData.hieuQua, 24);
+      const kScore = calcScore(evalData.khaNangApDung, 8);
+      const total = sScore + mScore + gScore + hScore + kScore;
+      
+      let finalClass = 'Không đạt';
+      if (total >= 90) {
+        finalClass = 'Xuất sắc';
+      } else if (total >= 80) {
+        finalClass = 'Tốt';
+      } else if (total >= 50) {
+        finalClass = 'Khá';
+      } else {
+        finalClass = 'Không đạt';
+      }
+
+      if (isCouncil) {
+        const councilEval: CouncilEvaluationResult = {
+          suCanThiet: {
+            score: sScore,
+            levelName: evalData.suCanThiet?.levelName || '',
+            analysis: evalData.suCanThiet?.analysis || [],
+            pros: evalData.suCanThiet?.pros || []
+          },
+          tinhMoi: {
+            score: mScore,
+            levelName: evalData.tinhMoi?.levelName || '',
+            analysis: evalData.tinhMoi?.analysis || [],
+            pros: evalData.tinhMoi?.pros || [],
+            cons: evalData.tinhMoi?.cons || []
+          },
+          giaiPhap: {
+            score: gScore,
+            levelName: evalData.giaiPhap?.levelName || '',
+            analysis: evalData.giaiPhap?.analysis || [],
+            pros: evalData.giaiPhap?.pros || [],
+            cons: evalData.giaiPhap?.cons || []
+          },
+          hieuQua: {
+            score: hScore,
+            levelName: evalData.hieuQua?.levelName || '',
+            analysis: evalData.hieuQua?.analysis || [],
+            cons: evalData.hieuQua?.cons || []
+          },
+          khaNangApDung: {
+            score: kScore,
+            levelName: evalData.khaNangApDung?.levelName || '',
+            analysis: evalData.khaNangApDung?.analysis || [],
+            cons: evalData.khaNangApDung?.cons || []
+          },
+          summary: evalData.summary || 'Sáng kiến kinh nghiệm.',
+          totalScore: total,
+          classification: finalClass,
+          evaluatedAt: new Date().toISOString()
+        };
+
+        const updatedResult: EvaluationResult = {
+          ...currentResult,
+          councilResult: councilEval
+        };
+
+        setCurrentResult(updatedResult);
+        saveToHistory(updatedResult);
+      } else {
+        const generatedResult: EvaluationResult = {
+          ...currentResult,
+          suCanThiet: {
+            score: sScore,
+            levelName: evalData.suCanThiet?.levelName || '',
+            analysis: evalData.suCanThiet?.analysis || [],
+            pros: evalData.suCanThiet?.pros || []
+          },
+          tinhMoi: {
+            score: mScore,
+            levelName: evalData.tinhMoi?.levelName || '',
+            analysis: evalData.tinhMoi?.analysis || [],
+            pros: evalData.tinhMoi?.pros || [],
+            cons: evalData.tinhMoi?.cons || []
+          },
+          giaiPhap: {
+            score: gScore,
+            levelName: evalData.giaiPhap?.levelName || '',
+            analysis: evalData.giaiPhap?.analysis || [],
+            pros: evalData.giaiPhap?.pros || [],
+            cons: evalData.giaiPhap?.cons || []
+          },
+          hieuQua: {
+            score: hScore,
+            levelName: evalData.hieuQua?.levelName || '',
+            analysis: evalData.hieuQua?.analysis || [],
+            cons: evalData.hieuQua?.cons || []
+          },
+          khaNangApDung: {
+            score: kScore,
+            levelName: evalData.khaNangApDung?.levelName || '',
+            analysis: evalData.khaNangApDung?.analysis || [],
+            cons: evalData.khaNangApDung?.cons || []
+          },
+          uuDiem: evalData.uuDiem || [],
+          hanChe: evalData.hanChe || [],
+          improvements: evalData.improvements || [],
+          summary: evalData.summary || 'Sáng kiến kinh nghiệm.',
+          totalScore: total,
+          classification: finalClass
+        };
+
+        setCurrentResult(generatedResult);
+        saveToHistory(generatedResult);
+      }
+      
+      setShowReAppraisalPanel(false);
+      setDesiredScore('');
+      setReAppraisalNotes('');
+    } catch (e: any) {
+      setErrorMsg(`Chấm điểm lại thất bại: ${e.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const runCouncilAppraisal = async () => {
+    if (!currentResult) return;
+    setIsLoading(true);
+    setLoadingMessageIndex(0);
+    setErrorMsg(null);
+    try {
+      const response = await fetch('/api/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKeys,
+          model: selectedModelAppraisal,
+          teacher: {
+            ...currentResult.teacher,
+            teacherName: currentResult.teacher.teacherName?.normalize('NFC') || '',
+            schoolName: currentResult.teacher.schoolName?.normalize('NFC') || '',
+            role: currentResult.teacher.role?.normalize('NFC') || '',
+            subject: currentResult.teacher.subject?.normalize('NFC') || ''
+          },
+          initiativeTitle: currentResult.initiativeTitle.normalize('NFC'),
+          appliedDate: currentResult.appliedDate || appliedDate,
+          initiativeText: currentResult.initiativeText.normalize('NFC'),
+          fileBase64: plagFileBase64,
+          fileName: plagFileName ? plagFileName.normalize('NFC') : '',
+          pronoun,
+          evaluationMode,
+          evaluateTarget: 'council'
+        })
+      });
+
+      if (!response.ok) {
+        let errData;
+        try { errData = await response.json(); } catch (e) { throw new Error(`Lỗi máy chủ (${response.status}): ${response.statusText}`); }
+        throw new Error(getFriendlyErrorMessage(errData?.details || errData?.error || 'Lỗi hệ thống'));
+      }
+
+      const evalData = await response.json();
+      
+      const calcScore = (obj: any, fallback: number) => Number(obj?.score) || fallback;
+      const sScore = calcScore(evalData.suCanThiet, 8);
+      const mScore = calcScore(evalData.tinhMoi, 16);
+      const gScore = calcScore(evalData.giaiPhap, 24);
+      const hScore = calcScore(evalData.hieuQua, 24);
+      const kScore = calcScore(evalData.khaNangApDung, 8);
+      const total = sScore + mScore + gScore + hScore + kScore;
+      
+      let finalClass = 'Không đạt';
+      if (total >= 90) {
+        finalClass = 'Xuất sắc';
+      } else if (total >= 80) {
+        finalClass = 'Tốt';
+      } else if (total >= 50) {
+        finalClass = 'Khá';
+      } else {
+        finalClass = 'Không đạt';
+      }
+
+      const councilEval: CouncilEvaluationResult = {
+        suCanThiet: {
+          score: sScore,
+          levelName: evalData.suCanThiet?.levelName || '',
+          analysis: evalData.suCanThiet?.analysis || [],
+          pros: evalData.suCanThiet?.pros || []
+        },
+        tinhMoi: {
+          score: mScore,
+          levelName: evalData.tinhMoi?.levelName || '',
+          analysis: evalData.tinhMoi?.analysis || [],
+          pros: evalData.tinhMoi?.pros || [],
+          cons: evalData.tinhMoi?.cons || []
+        },
+        giaiPhap: {
+          score: gScore,
+          levelName: evalData.giaiPhap?.levelName || '',
+          analysis: evalData.giaiPhap?.analysis || [],
+          pros: evalData.giaiPhap?.pros || [],
+          cons: evalData.giaiPhap?.cons || []
+        },
+        hieuQua: {
+          score: hScore,
+          levelName: evalData.hieuQua?.levelName || '',
+          analysis: evalData.hieuQua?.analysis || [],
+          cons: evalData.hieuQua?.cons || []
+        },
+        khaNangApDung: {
+          score: kScore,
+          levelName: evalData.khaNangApDung?.levelName || '',
+          analysis: evalData.khaNangApDung?.analysis || [],
+          cons: evalData.khaNangApDung?.cons || []
+        },
+        summary: evalData.summary || 'Sáng kiến kinh nghiệm.',
+        totalScore: total,
+        classification: finalClass,
+        evaluatedAt: new Date().toISOString()
+      };
+
+      const updatedResult: EvaluationResult = {
+        ...currentResult,
+        councilResult: councilEval
+      };
+
+      setCurrentResult(updatedResult);
+      saveToHistory(updatedResult);
+      setActiveAppraisalView('council');
+    } catch (e: any) {
+      setErrorMsg(`Thẩm định ở Hội đồng thất bại: ${e.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -944,7 +1662,9 @@ export default function App() {
           stage: cleanNull(data.extractedStage) || prev.stage,
           subject: cleanNull(data.extractedSubject) || prev.subject,
           role: cleanNull(data.extractedRole) || prev.role,
-          birthYear: cleanNull(data.extractedBirthYear) || prev.birthYear
+          birthYear: cleanNull(data.extractedBirthYear) || prev.birthYear,
+          phone: cleanNull(data.extractedPhone) || prev.phone || '',
+          email: cleanNull(data.extractedEmail) || prev.email || ''
         }));
         
         setExtractionStep(3); // Mức 3: Hoàn thành
@@ -1396,7 +2116,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      setTeacher({ teacherName: '', birthYear: '', role: '', schoolName: '', stage: 'Tiểu học', subject: '' });
+                      setTeacher({ teacherName: '', birthYear: '', role: '', schoolName: '', stage: 'Tiểu học', subject: '', phone: '', email: '' });
                       setInitiativeTitle('');
                       setInitiativeText('');
                       setErrorMsg(null);
@@ -1484,6 +2204,32 @@ export default function App() {
                     />
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-natural-text uppercase mb-1.5 flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-natural-muted" /> Số điện thoại tác giả
+                  </label>
+                  <input
+                    type="text"
+                    value={teacher.phone || ''}
+                    onChange={(e) => setTeacher({...teacher, phone: e.target.value})}
+                    placeholder="Ví dụ: 0912345678"
+                    className="w-full text-sm border border-natural-border rounded-xl px-3.5 py-2 focus:border-natural-primary focus:ring-1 focus:ring-natural-primary focus:outline-none bg-[#fffefc]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-natural-text uppercase mb-1.5 flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-natural-muted" /> Email liên hệ
+                  </label>
+                  <input
+                    type="email"
+                    value={teacher.email || ''}
+                    onChange={(e) => setTeacher({...teacher, email: e.target.value})}
+                    placeholder="Ví dụ: nguyenmai@gmail.com"
+                    className="w-full text-sm border border-natural-border rounded-xl px-3.5 py-2 focus:border-natural-primary focus:ring-1 focus:ring-natural-primary focus:outline-none bg-[#fffefc]"
+                  />
+                </div>
               </div>
 
               {/* Title of Initiative */}
@@ -1539,6 +2285,110 @@ export default function App() {
                     onChange={(e) => setAppliedDate(e.target.value)}
                     className="w-full text-sm border border-natural-border rounded-xl px-3.5 py-2 focus:border-natural-primary focus:ring-1 focus:ring-natural-primary focus:outline-none bg-[#fffefc]"
                   />
+                </div>
+              </div>
+
+              {/* Hội đồng Thẩm định (Tùy chọn) */}
+              <div className="border-t border-natural-border/60 pt-5 mt-4">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-1 bg-natural-primary rounded-full"></div>
+                    <h3 className="text-xs font-bold text-natural-primary uppercase tracking-wider">Thành viên Tổ Thẩm định / Hội đồng Thẩm định (Tùy chọn)</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newId = 'member_' + Date.now();
+                      const updated = [...councilMembers, { id: newId, name: '', unit: '', role: '' }];
+                      setCouncilMembers(updated);
+                      syncToFirestore({ councilMembers: updated });
+                    }}
+                    className="flex items-center gap-1.5 text-[11px] font-bold text-natural-primary hover:text-natural-secondary bg-[#faf9f5] border border-natural-border px-3 py-1.5 rounded-xl transition cursor-pointer hover:bg-natural-accent"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Thêm thành viên
+                  </button>
+                </div>
+                
+                <div className="mb-4">
+                  <label className="block text-xs font-bold text-natural-text uppercase mb-1.5">
+                    Hội đồng / Tổ thẩm định nào (Ví dụ: CỦA THÀNH VIÊN TỔ THẨM ĐỊNH SÁNG KIẾN)
+                  </label>
+                  <input
+                    type="text"
+                    value={councilName}
+                    onChange={(e) => {
+                      setCouncilName(e.target.value);
+                      syncToFirestore({ councilName: e.target.value });
+                    }}
+                    placeholder="Nhập tên hội đồng hoặc tổ thẩm định..."
+                    className="w-full text-sm border border-natural-border rounded-xl px-3.5 py-2.5 focus:border-natural-primary focus:ring-1 focus:ring-natural-primary focus:outline-none bg-[#fffefc] text-natural-text font-medium"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {councilMembers.map((m, index) => (
+                    <div key={m.id || index} className="bg-[#faf9f5]/50 p-4 rounded-xl border border-natural-border/60 space-y-3 shadow-sm relative">
+                      <div className="flex items-center justify-between border-b border-natural-border/60 pb-1.5">
+                        <div className="text-[11px] font-bold text-natural-primary uppercase">Thành viên {index + 1}</div>
+                        {councilMembers.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = councilMembers.filter(member => member.id !== m.id);
+                              setCouncilMembers(updated);
+                              syncToFirestore({ councilMembers: updated });
+                            }}
+                            className="text-red-500 hover:text-red-700 transition opacity-80 hover:opacity-100 cursor-pointer p-1 rounded hover:bg-red-50"
+                            title="Xóa thành viên này"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-natural-text uppercase mb-1">Họ và tên</label>
+                        <input
+                          type="text"
+                          value={m.name}
+                          onChange={(e) => {
+                            const updated = councilMembers.map(member => member.id === m.id ? { ...member, name: e.target.value } : member);
+                            setCouncilMembers(updated);
+                            syncToFirestore({ councilMembers: updated });
+                          }}
+                          placeholder="Ví dụ: Nguyễn Văn A"
+                          className="w-full text-xs border border-natural-border rounded-lg px-2.5 py-1.5 focus:border-natural-primary focus:outline-none bg-white text-natural-text"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-natural-text uppercase mb-1">Đơn vị công tác</label>
+                        <input
+                          type="text"
+                          value={m.unit}
+                          onChange={(e) => {
+                            const updated = councilMembers.map(member => member.id === m.id ? { ...member, unit: e.target.value } : member);
+                            setCouncilMembers(updated);
+                            syncToFirestore({ councilMembers: updated });
+                          }}
+                          placeholder="Ví dụ: Trường Tiểu học Phù Lưu"
+                          className="w-full text-xs border border-natural-border rounded-lg px-2.5 py-1.5 focus:border-natural-primary focus:outline-none bg-white text-natural-text"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-natural-text uppercase mb-1">Chức vụ</label>
+                        <input
+                          type="text"
+                          value={m.role}
+                          onChange={(e) => {
+                            const updated = councilMembers.map(member => member.id === m.id ? { ...member, role: e.target.value } : member);
+                            setCouncilMembers(updated);
+                            syncToFirestore({ councilMembers: updated });
+                          }}
+                          placeholder="Ví dụ: Tổ trưởng chuyên môn"
+                          className="w-full text-xs border border-natural-border rounded-lg px-2.5 py-1.5 focus:border-natural-primary focus:outline-none bg-white text-natural-text"
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -1681,6 +2531,15 @@ export default function App() {
                   </label>
                   <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-natural-text border border-natural-border px-2 py-0.5 border-dashed rounded shrink-0 transition hover:bg-natural-accent">
                     <input 
+                      type="checkbox" 
+                      checked={excelIncludeRemarks}
+                      onChange={(e) => setExcelIncludeRemarks(e.target.checked)}
+                      className="w-3 h-3 rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    Có lời nhận xét
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-natural-text border border-natural-border px-2 py-0.5 border-dashed rounded shrink-0 transition hover:bg-natural-accent">
+                    <input 
                       type="checkbox"
                       checked={sortExcelBySchool}
                       onChange={(e) => setSortExcelBySchool(e.target.checked)}
@@ -1710,6 +2569,23 @@ export default function App() {
                         if (h.appliedDate) setAppliedDate(h.appliedDate);
                         if (h.initiativeText) setInitiativeText(h.initiativeText);
                         setPlagResult(h.plagiarismResult || null);
+                        setCouncilName(h.councilName || 'CỦA THÀNH VIÊN TỔ THẨM ĐỊNH SÁNG KIẾN');
+                        setMember1Name(h.member1Name || '');
+                        setMember1Unit(h.member1Unit || '');
+                        setMember1Role(h.member1Role || '');
+                        setMember2Name(h.member2Name || '');
+                        setMember2Unit(h.member2Unit || '');
+                        setMember2Role(h.member2Role || '');
+                        setMember3Name(h.member3Name || '');
+                        setMember3Unit(h.member3Unit || '');
+                        setMember3Role(h.member3Role || '');
+
+                        const loadedMembers: CouncilMember[] = h.councilMembers || [
+                          { id: '1', name: h.member1Name || '', unit: h.member1Unit || '', role: h.member1Role || '' },
+                          { id: '2', name: h.member2Name || '', unit: h.member2Unit || '', role: h.member2Role || '' },
+                          { id: '3', name: h.member3Name || '', unit: h.member3Unit || '', role: h.member3Role || '' },
+                        ];
+                        setCouncilMembers(loadedMembers);
                       }}
                       className={`p-2.5 rounded-xl border text-xs flex items-center justify-between cursor-pointer transition ${isCurrent ? 'bg-[#f4f3e6] border-natural-secondary' : 'bg-natural-accent/30 border-natural-border hover:bg-natural-accent'}`}
                     >
@@ -1948,8 +2824,141 @@ export default function App() {
                       ) : (
                         <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto custom-scrollbar">
                           <div className="flex flex-col gap-3 bg-natural-accent/20 p-4 rounded-xl border border-natural-border font-sans shrink-0">
-                            <h4 className="text-xs font-bold text-natural-primary uppercase border-b border-natural-border pb-1.5">Tổng hợp quét Đạo văn, AI & Chính tả</h4>
+                            <div className="flex justify-between items-center border-b border-natural-border pb-1.5">
+                              <h4 className="text-xs font-bold text-natural-primary uppercase">Tổng hợp quét Đạo văn, AI & Chính tả</h4>
+                              <button 
+                                type="button"
+                                onClick={() => setIsEditingPlag(!isEditingPlag)} 
+                                className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded bg-white hover:bg-natural-accent border border-natural-border text-natural-primary transition cursor-pointer flex items-center gap-1.5 shadow-sm"
+                              >
+                                <Pencil className="w-3 h-3 text-natural-muted" /> {isEditingPlag ? "Đóng chỉnh sửa" : "Chỉnh sửa"}
+                              </button>
+                            </div>
                             
+                            {isEditingPlag && (
+                              <div className="bg-white/90 p-3 rounded-lg border border-natural-border/80 flex flex-col gap-3 text-xs mb-1 shadow-sm">
+                                <div className="font-bold text-[10px] text-natural-primary uppercase tracking-wider">Điều chỉnh kết quả rà soát & chính tả</div>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-natural-muted uppercase mb-1">Tỷ lệ Trùng lặp (%)</label>
+                                    <input 
+                                      type="number" 
+                                      min={0} max={100} 
+                                      value={plagResult.totalDuplicatePercent}
+                                      onChange={(e) => {
+                                        const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                                        let level = plagResult.warningLevel;
+                                        if (val <= 15) level = 'An toàn (Thấp)';
+                                        else if (val <= 25) level = 'Vi phạm nhẹ';
+                                        else if (val <= 30) level = 'Vi phạm trung bình';
+                                        else level = 'Vi phạm nghiêm trọng (Vượt quy định)';
+                                        
+                                        updatePlagiarismDataInResult({
+                                          ...plagResult,
+                                          totalDuplicatePercent: val,
+                                          warningLevel: level
+                                        });
+                                      }}
+                                      className="w-full text-xs font-semibold border border-natural-border rounded px-2 py-1 focus:outline-none focus:border-natural-primary"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-natural-muted uppercase mb-1">Tỷ lệ viết bằng AI (%)</label>
+                                    <input 
+                                      type="number" 
+                                      min={0} max={100} 
+                                      value={plagResult.aiGeneratedPercent || 0}
+                                      onChange={(e) => {
+                                        const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                                        updatePlagiarismDataInResult({
+                                          ...plagResult,
+                                          aiGeneratedPercent: val
+                                        });
+                                      }}
+                                      className="w-full text-xs font-semibold border border-natural-border rounded px-2 py-1 focus:outline-none focus:border-natural-primary"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-1 gap-2">
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-natural-muted uppercase mb-1">Cảnh báo / Kết luận đạo văn</label>
+                                    <select
+                                      value={plagResult.warningLevel}
+                                      onChange={(e) => {
+                                        updatePlagiarismDataInResult({
+                                          ...plagResult,
+                                          warningLevel: e.target.value
+                                        });
+                                      }}
+                                      className="w-full text-xs font-semibold border border-natural-border rounded px-2 py-1 bg-white focus:outline-none focus:border-natural-primary"
+                                    >
+                                      <option value="An toàn (Thấp)">An toàn (Thấp)</option>
+                                      <option value="Vi phạm nhẹ">Vi phạm nhẹ</option>
+                                      <option value="Vi phạm trung bình">Vi phạm trung bình</option>
+                                      <option value="Vi phạm nghiêm trọng">Vi phạm nghiêm trọng</option>
+                                      <option value="Không đạt (Đạo văn quá quy định)">Không đạt (Đạo văn quá quy định)</option>
+                                    </select>
+                                  </div>
+                                </div>
+                                
+                                <div className="border-t border-natural-border/60 pt-2">
+                                  <div className="font-bold text-[10px] text-natural-primary uppercase tracking-wider mb-1.5">Thêm lỗi chính tả thủ công</div>
+                                  <div className="grid grid-cols-2 gap-2 mb-2">
+                                    <input 
+                                      type="text" 
+                                      id="new-error-text"
+                                      placeholder="Từ viết sai" 
+                                      className="text-xs border border-natural-border rounded px-2 py-1 focus:outline-none"
+                                    />
+                                    <input 
+                                      type="text" 
+                                      id="new-error-correction"
+                                      placeholder="Sửa lại thành" 
+                                      className="text-xs border border-natural-border rounded px-2 py-1 focus:outline-none"
+                                    />
+                                  </div>
+                                  <input 
+                                    type="text" 
+                                    id="new-error-reason"
+                                    placeholder="Lý do / Nguyên tắc chính tả" 
+                                    className="w-full text-xs border border-natural-border rounded px-2 py-1 mb-2 focus:outline-none"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const errTextEl = document.getElementById('new-error-text') as HTMLInputElement;
+                                      const corrEl = document.getElementById('new-error-correction') as HTMLInputElement;
+                                      const reasonEl = document.getElementById('new-error-reason') as HTMLInputElement;
+                                      if (errTextEl && corrEl) {
+                                        const errText = errTextEl.value.trim();
+                                        const correction = corrEl.value.trim();
+                                        const reason = reasonEl ? reasonEl.value.trim() : '';
+                                        if (errText && correction) {
+                                          const newErr = {
+                                            errorText: errText,
+                                            correction: correction,
+                                            context: `Trong văn bản có từ "${errText}"`,
+                                            reason: reason || 'Lỗi chính tả thông thường'
+                                          };
+                                          const updatedErrors = [...(plagResult.spellingErrors || []), newErr];
+                                          updatePlagiarismDataInResult({
+                                            ...plagResult,
+                                            spellingErrors: updatedErrors
+                                          });
+                                          errTextEl.value = '';
+                                          corrEl.value = '';
+                                          if (reasonEl) reasonEl.value = '';
+                                        }
+                                      }
+                                    }}
+                                    className="w-full bg-natural-primary hover:bg-[#434330] text-white font-bold py-1 px-3 rounded text-[10px] uppercase transition cursor-pointer"
+                                  >
+                                    Thêm lỗi chính tả
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
                             <div className="grid grid-cols-3 gap-3">
                               {/* Đạo văn Circle */}
                               <div className="flex flex-col items-center bg-white p-2.5 rounded-xl border border-natural-border/60 shadow-sm">
@@ -2057,11 +3066,27 @@ export default function App() {
                               </span>
                               <div className="grid grid-cols-1 gap-2">
                                 {plagResult.spellingErrors.map((err, i) => (
-                                  <div key={i} className="text-xs p-3 rounded-lg bg-red-50/50 border border-red-100 flex flex-col gap-1.5">
-                                    <div className="flex flex-wrap gap-1 items-center">
-                                      <span className="font-semibold text-red-700 line-through bg-red-100/50 px-1 rounded">{err.errorText}</span> 
-                                      <ArrowRight className="w-3 h-3 text-natural-muted mx-0.5" /> 
-                                      <span className="font-semibold text-emerald-700 bg-emerald-100/50 px-1 rounded">{err.correction}</span>
+                                  <div key={i} className="text-xs p-3 rounded-lg bg-red-50/50 border border-red-100 flex flex-col gap-1.5 relative group">
+                                    <div className="flex justify-between items-start gap-2">
+                                      <div className="flex flex-wrap gap-1 items-center">
+                                        <span className="font-semibold text-red-700 line-through bg-red-100/50 px-1 rounded">{err.errorText}</span> 
+                                        <ArrowRight className="w-3 h-3 text-natural-muted mx-0.5" /> 
+                                        <span className="font-semibold text-emerald-700 bg-emerald-100/50 px-1 rounded">{err.correction}</span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updatedErrors = plagResult.spellingErrors?.filter((_, index) => index !== i) || [];
+                                          updatePlagiarismDataInResult({
+                                            ...plagResult,
+                                            spellingErrors: updatedErrors
+                                          });
+                                        }}
+                                        className="p-1 hover:bg-red-100 text-red-600 rounded transition cursor-pointer"
+                                        title="Xóa lỗi này"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
                                     </div>
                                     <div className="text-[10px] italic text-neutral-500 border-l-2 border-red-200 pl-2">"...{err.context}..."</div>
                                     <div className="text-[10px] text-neutral-600 font-medium">{err.reason}</div>
@@ -2251,221 +3276,559 @@ export default function App() {
                 )}
                 {/* End merged tab */}
 
-                {mainTab === 'appraisal' && currentResult && (
-                  <div className="flex-1 flex flex-col overflow-hidden">
-                    {/* Score breakdown sliders/bars */}
-                    {currentResult.evaluationMode !== 'comment_only' && (
-                      <div className="p-5 border-b border-natural-border bg-[#faf9f5] flex flex-col gap-4 shrink-0">
-                        <h4 className="text-[11px] font-bold text-natural-muted uppercase tracking-wider mb-2">
-                          Điểm số thành phần chấm chi tiết:
-                        </h4>
-                        
-                        <div className="space-y-3">
-                          {/* Tính mới */}
-                          <div>
-                            <div className="flex justify-between text-[11px] font-semibold text-natural-text mb-1">
-                              <span>Tính mới, sáng tạo</span>
-                              <span className="text-natural-primary font-bold">{currentResult.tinhMoi?.score || 0} / 10đ</span>
-                            </div>
-                            <div className="w-full bg-natural-accent h-2 rounded-full overflow-hidden flex border border-natural-border/30">
-                              <div className="bg-blue-600 h-full rounded-full" style={{ width: `${((currentResult.tinhMoi?.score || 0) / 10) * 100}%` }}></div>
-                            </div>
-                          </div>
+                {mainTab === 'appraisal' && currentResult && (() => {
+                  const isCouncilView = activeAppraisalView === 'council';
+                  const hasCouncilResult = !!currentResult.councilResult;
+                  const displayedEval = isCouncilView && hasCouncilResult ? currentResult.councilResult! : currentResult;
 
-                          {/* Tính khoa học */}
-                          <div>
-                            <div className="flex justify-between text-[11px] font-semibold text-natural-text mb-1">
-                              <span>Tính khoa học, hình thức</span>
-                              <span className="text-natural-primary font-bold">{currentResult.tinhKhoaHoc?.score || 0} / 15đ</span>
-                            </div>
-                            <div className="w-full bg-natural-accent h-2 rounded-full overflow-hidden flex border border-natural-border/30">
-                              <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${((currentResult.tinhKhoaHoc?.score || 0) / 15) * 100}%` }}></div>
-                            </div>
+                  const uuDiemList = ('uuDiem' in displayedEval ? (displayedEval as any).uuDiem : currentResult.uuDiem) || [];
+                  const hanCheList = ('hanChe' in displayedEval ? (displayedEval as any).hanChe : currentResult.hanChe) || [];
+                  const improvementsList = ('improvements' in displayedEval ? (displayedEval as any).improvements : currentResult.improvements) || [];
+
+                  return (
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                      {/* Segmented control / Tab switcher */}
+                      <div className="p-4 bg-[#faf9f5] border-b border-natural-border shrink-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex bg-[#f3f1e8] p-1 rounded-xl gap-1 max-w-sm w-full border border-natural-border/30">
+                            <button
+                              type="button"
+                              onClick={() => setActiveAppraisalView('department')}
+                              className={`flex-1 py-1.5 px-3 text-xs font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 ${!isCouncilView ? 'bg-natural-primary text-white shadow-sm' : 'text-natural-muted hover:text-natural-text hover:bg-natural-accent/50'}`}
+                            >
+                              Sơ bộ (Phòng VH-XH)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setActiveAppraisalView('council')}
+                              className={`flex-1 py-1.5 px-3 text-xs font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 ${isCouncilView ? 'bg-amber-700 text-white shadow-sm' : 'text-natural-muted hover:text-natural-text hover:bg-natural-accent/50'}`}
+                            >
+                              Hội đồng Thẩm định {hasCouncilResult && <span className="ml-1 px-1.5 py-0.5 text-[9px] bg-white text-amber-700 rounded-full font-extrabold">Đã chấm</span>}
+                            </button>
                           </div>
                           
-                          {/* Minh chứng, số liệu */}
-                          {currentResult.minhChung && (
-                            <div>
-                              <div className="flex justify-between text-[11px] font-semibold text-natural-text mb-1">
-                                <span>Minh chứng, số liệu</span>
-                                <span className="text-natural-primary font-bold">{currentResult.minhChung?.score || 0} / 15đ</span>
-                              </div>
-                              <div className="w-full bg-natural-accent h-2 rounded-full overflow-hidden flex border border-natural-border/30">
-                                <div className="bg-orange-500 h-full rounded-full" style={{ width: `${((currentResult.minhChung?.score || 0) / 15) * 100}%` }}></div>
+                          {/* Print & Action Buttons */}
+                          {(!isCouncilView || hasCouncilResult) && (
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setShowPrintModal(true)}
+                                className="px-3 py-1.5 bg-natural-primary hover:bg-[#434330] border border-natural-primary hover:border-[#434330] text-[#eaeada] hover:text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow transition flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Printer className="w-4 h-4" /> Thống kê & In phiếu
+                              </button>
+                              
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowReAppraisalPanel(!showReAppraisalPanel);
+                                  if (!showReAppraisalPanel) {
+                                    setDesiredScore(displayedEval.totalScore || '');
+                                  }
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-[#f3f1e8] hover:bg-[#8b8b68] text-[#8b8b68] hover:text-white rounded-lg transition border border-[#8b8b68]/30 shadow-sm cursor-pointer"
+                              >
+                                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                                {showReAppraisalPanel 
+                                  ? (isCouncilView ? "Đóng bảng thẩm định" : "Đóng bảng chấm lại") 
+                                  : (isCouncilView ? "Thẩm định lại" : "Chấm điểm lại")
+                                }
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Special banner for Council view */}
+                        {isCouncilView && hasCouncilResult && (
+                          <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900 font-semibold flex items-center gap-1.5">
+                            <Award className="w-4 h-4 text-amber-700" /> Kết quả chấm điểm và đánh giá độc lập của Hội đồng Thẩm định Sáng kiến xã Hàm Yên.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Main evaluation section body */}
+                      {isCouncilView && !hasCouncilResult ? (
+                        <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center justify-center text-center gap-5">
+                          <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center border border-amber-200">
+                            <Award className="w-8 h-8 text-amber-700 animate-pulse" />
+                          </div>
+                          <div className="max-w-md space-y-2">
+                            <h3 className="text-sm font-bold text-natural-text uppercase tracking-wider">Hội đồng Thẩm định Sáng kiến</h3>
+                            <p className="text-xs text-natural-muted leading-relaxed">
+                              Sáng kiến này hiện chưa có kết quả chấm điểm độc lập từ Hội đồng Thẩm định xã Hàm Yên.
+                              Nhận xét của Hội đồng sẽ được tạo mới hoàn toàn với góc nhìn tập thể khách quan, phản biện sâu sắc, và bám sát các tiêu chuẩn của Nghị định số 13/2012/NĐ-CP.
+                            </p>
+                          </div>
+
+                          <div className="flex flex-col items-center gap-2 max-w-xs w-full bg-amber-50/50 p-4 rounded-xl border border-amber-200/50">
+                            <label className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wider flex items-center gap-1">
+                              <Sparkles className="w-3.5 h-3.5 text-amber-600 animate-pulse" /> Mô hình AI sử dụng:
+                            </label>
+                            <select
+                              value={selectedModelAppraisal}
+                              onChange={(e) => setSelectedModelAppraisal(e.target.value)}
+                              className="text-xs font-semibold bg-white border border-amber-300 text-amber-900 rounded-lg px-3 py-2 outline-none w-full shadow-sm focus:border-amber-500 cursor-pointer text-center"
+                            >
+                              <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Mạnh mẽ nhất)</option>
+                              <option value="gemini-pro">Gemini Pro Latest</option>
+                              <option value="gemini-3.5-flash">Gemini 3.5 Flash (Cân bằng, Rất ổn định)</option>
+                              <option value="gemini-3.0-flash-preview">Gemini 3 Flash Preview (Thử nghiệm)</option>
+                              <option value="gemini-flash">Gemini Flash Latest</option>
+                              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Thế hệ trước)</option>
+                              <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Nhanh nhất, Khuyên dùng)</option>
+                            </select>
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={isLoading}
+                            onClick={runCouncilAppraisal}
+                            className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold uppercase tracking-widest rounded-xl transition shadow hover:shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                          >
+                            {isLoading ? (
+                              <>
+                                <RefreshCw className="w-4 h-4 animate-spin" /> Đang thẩm định...
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-4 h-4" /> Kích hoạt Đánh giá Hội đồng
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Re-appraisal panel inside the viewport */}
+                          {showReAppraisalPanel && (
+                            <div className="p-5 border-b border-natural-border bg-amber-50/20 shrink-0">
+                              <div className="bg-amber-50/60 border border-amber-200 p-4 rounded-xl flex flex-col gap-3 text-left shadow-inner">
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-xs font-bold text-amber-950 flex items-center gap-1">
+                                    <Sparkles className="w-4 h-4 text-amber-600" /> {isCouncilView ? "Tính năng Thẩm Định Lại Hội Đồng (AI Re-evaluation)" : "Tính năng Chấm Điểm Lại (AI Re-evaluation)"}
+                                  </span>
+                                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                                    Chọn mô hình, chế độ thẩm định, điểm số mong muốn và các lưu ý riêng để trợ lý AI thực hiện thẩm định và lập luận nhận xét chính xác nhất.
+                                  </p>
+                                </div>
+
+                                {/* Model and Mode selection row */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div className="flex flex-col gap-1.5">
+                                    <label className="text-[10px] font-bold text-amber-900 uppercase">Mô hình AI sử dụng:</label>
+                                    <select
+                                      value={selectedModelAppraisal}
+                                      onChange={(e) => setSelectedModelAppraisal(e.target.value)}
+                                      className="text-xs font-semibold bg-white border border-amber-200 text-amber-900 rounded-lg p-2 outline-none focus:border-amber-400 shadow-sm"
+                                    >
+                                      <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Mạnh mẽ nhất)</option>
+                                      <option value="gemini-pro">Gemini Pro Latest</option>
+                                      <option value="gemini-3.5-flash">Gemini 3.5 Flash (Cân bằng, Rất ổn định)</option>
+                                      <option value="gemini-3.0-flash-preview">Gemini 3 Flash Preview (Thử nghiệm)</option>
+                                      <option value="gemini-flash">Gemini Flash Latest</option>
+                                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (Thế hệ trước)</option>
+                                      <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Nhanh nhất, Khuyên dùng)</option>
+                                    </select>
+                                  </div>
+                                  <div className="flex flex-col gap-1.5">
+                                    <label className="text-[10px] font-bold text-amber-900 uppercase">Chế độ phân tích AI:</label>
+                                    <select
+                                      value={evaluationMode}
+                                      onChange={(e: any) => setEvaluationMode(e.target.value)}
+                                      className="text-xs font-semibold bg-white border border-amber-200 text-amber-900 rounded-lg p-2 outline-none focus:border-amber-400 shadow-sm"
+                                    >
+                                      <option value="full">Chấm điểm & Xếp loại đầy đủ</option>
+                                      <option value="comment_only">Chỉ Góp ý chuyên môn</option>
+                                    </select>
+                                  </div>
+                                </div>
+
+                                {/* Desired score and custom notes row */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                  {evaluationMode === 'full' ? (
+                                    <>
+                                      <div className="flex flex-col gap-1.5 sm:col-span-1">
+                                        <label className="text-[10px] font-bold text-amber-900 uppercase">Điểm số mong muốn (0-100):</label>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          value={desiredScore}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (val === '') {
+                                              setDesiredScore('');
+                                            } else {
+                                              const num = Math.min(100, Math.max(0, parseInt(val) || 0));
+                                              setDesiredScore(num);
+                                            }
+                                          }}
+                                          placeholder="Ví dụ: 88"
+                                          className="text-xs bg-white border border-amber-200 text-amber-900 rounded-lg p-2 outline-none focus:border-amber-400 font-bold shadow-sm"
+                                        />
+                                      </div>
+                                      <div className="flex flex-col gap-1.5 sm:col-span-2">
+                                        <label className="text-[10px] font-bold text-amber-900 uppercase">Yêu cầu chỉnh sửa / Lưu ý riêng cho AI:</label>
+                                        <input
+                                          type="text"
+                                          value={reAppraisalNotes}
+                                          onChange={(e) => setReAppraisalNotes(e.target.value)}
+                                          placeholder="Ví dụ: Nâng điểm vì tính ứng dụng cao / Tập trung phân tích biện pháp..."
+                                          className="text-xs bg-white border border-amber-200 text-amber-900 rounded-lg p-2 outline-none focus:border-amber-400 shadow-sm"
+                                        />
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="flex flex-col gap-1.5 sm:col-span-3">
+                                      <label className="text-[10px] font-bold text-amber-900 uppercase">Yêu cầu chỉnh sửa / Lưu ý riêng cho AI:</label>
+                                      <input
+                                        type="text"
+                                        value={reAppraisalNotes}
+                                        onChange={(e) => setReAppraisalNotes(e.target.value)}
+                                        placeholder="Ví dụ: Tập trung làm rõ các điểm cần khắc phục và nâng cao chất lượng sư phạm..."
+                                        className="text-xs bg-white border border-amber-200 text-amber-900 rounded-lg p-2 outline-none focus:border-amber-400 shadow-sm"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="flex justify-end gap-2 mt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setShowReAppraisalPanel(false);
+                                      setDesiredScore('');
+                                      setReAppraisalNotes('');
+                                    }}
+                                    className="px-3 py-1.5 bg-white border border-amber-200 hover:bg-amber-100 text-amber-900 font-bold text-xs rounded-lg transition cursor-pointer"
+                                  >
+                                    Hủy bỏ
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleTriggerReEvaluation}
+                                    disabled={isLoading}
+                                    className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition shadow-sm flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                  >
+                                    <Sparkles className="w-3.5 h-3.5 animate-pulse" /> {isCouncilView ? "Bắt đầu thẩm định lại" : "Bắt đầu chấm lại"}
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           )}
-                          
-                          {/* Hiệu quả áp dụng */}
-                          <div>
-                            <div className="flex justify-between text-[11px] font-semibold text-natural-text mb-1">
-                              <span>Hiệu quả áp dụng</span>
-                              <span className="text-natural-primary font-bold">{currentResult.hieuQua.score} / 40đ</span>
+
+                          {/* Score breakdown sliders/bars */}
+                          {currentResult.evaluationMode !== 'comment_only' && (
+                            <div className="p-5 border-b border-natural-border bg-[#faf9f5] flex flex-col gap-4 shrink-0">
+                              <h4 className="text-[11px] font-bold text-natural-muted uppercase tracking-wider mb-2">
+                                Điểm số thành phần chấm chi tiết:
+                              </h4>
+                              
+                              <div className="space-y-3">
+                                {/* Sự cần thiết */}
+                                {displayedEval.suCanThiet && (
+                                  <div>
+                                    <div className="flex justify-between text-[11px] font-semibold text-natural-text mb-1">
+                                      <span>Sự cần thiết của sáng kiến</span>
+                                      <span className="text-natural-primary font-bold">{displayedEval.suCanThiet?.score || 0} / 10đ</span>
+                                    </div>
+                                    <div className="w-full bg-natural-accent h-2 rounded-full overflow-hidden flex border border-natural-border/30">
+                                      <div className="bg-amber-600 h-full rounded-full" style={{ width: `${((displayedEval.suCanThiet?.score || 0) / 10) * 100}%` }}></div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Tính mới */}
+                                {displayedEval.tinhMoi && (
+                                  <div>
+                                    <div className="flex justify-between text-[11px] font-semibold text-natural-text mb-1">
+                                      <span>Tính mới, sáng tạo</span>
+                                      <span className="text-natural-primary font-bold">{displayedEval.tinhMoi?.score || 0} / 20đ</span>
+                                    </div>
+                                    <div className="w-full bg-natural-accent h-2 rounded-full overflow-hidden flex border border-natural-border/30">
+                                      <div className="bg-blue-600 h-full rounded-full" style={{ width: `${((displayedEval.tinhMoi?.score || 0) / 20) * 100}%` }}></div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Nội dung và giải pháp */}
+                                {displayedEval.giaiPhap && (
+                                  <div>
+                                    <div className="flex justify-between text-[11px] font-semibold text-natural-text mb-1">
+                                      <span>Nội dung và chất lượng giải pháp</span>
+                                      <span className="text-natural-primary font-bold">{displayedEval.giaiPhap?.score || 0} / 30đ</span>
+                                    </div>
+                                    <div className="w-full bg-natural-accent h-2 rounded-full overflow-hidden flex border border-natural-border/30">
+                                      <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${((displayedEval.giaiPhap?.score || 0) / 30) * 100}%` }}></div>
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {/* Hiệu quả áp dụng */}
+                                {displayedEval.hieuQua && (
+                                  <div>
+                                    <div className="flex justify-between text-[11px] font-semibold text-natural-text mb-1">
+                                      <span>Hiệu quả áp dụng</span>
+                                      <span className="text-natural-primary font-bold">{displayedEval.hieuQua?.score || 0} / 30đ</span>
+                                    </div>
+                                    <div className="w-full bg-natural-accent h-2 rounded-full overflow-hidden flex border border-natural-border/30">
+                                      <div className="bg-emerald-600 h-full rounded-full" style={{ width: `${((displayedEval.hieuQua?.score || 0) / 30) * 100}%` }}></div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Khả năng áp dụng */}
+                                {displayedEval.khaNangApDung && (
+                                  <div>
+                                    <div className="flex justify-between text-[11px] font-semibold text-natural-text mb-1">
+                                      <span>Khả năng áp dụng, nhân rộng</span>
+                                      <span className="text-natural-primary font-bold">{displayedEval.khaNangApDung?.score || 0} / 10đ</span>
+                                    </div>
+                                    <div className="w-full bg-natural-accent h-2 rounded-full overflow-hidden flex border border-natural-border/30">
+                                      <div className="bg-orange-500 h-full rounded-full" style={{ width: `${((displayedEval.khaNangApDung?.score || 0) / 10) * 100}%` }}></div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Total score box under the sliders */}
+                              <div className="mt-4 pt-4 border-t border-natural-border/60 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-natural-muted uppercase tracking-wider">Tổng điểm đánh giá:</span>
+                                  <span className={`px-2.5 py-1 text-xs font-bold rounded-lg ${
+                                    isCouncilView ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-natural-primary/10 text-natural-primary border border-natural-primary/20'
+                                  }`}>
+                                    {displayedEval.classification || 'Khá'}
+                                  </span>
+                                </div>
+                                <div className="flex items-baseline gap-1">
+                                  <span className={`text-2xl font-black ${isCouncilView ? 'text-amber-700' : 'text-red-700'}`}>
+                                    {displayedEval.totalScore}
+                                  </span>
+                                  <span className="text-xs font-bold text-natural-muted">/ 100đ</span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="w-full bg-natural-accent h-2 rounded-full overflow-hidden flex border border-natural-border/30">
-                              <div className="bg-amber-600 h-full rounded-full" style={{ width: `${(currentResult.hieuQua.score / 40) * 100}%` }}></div>
+                          )}
+
+                          {/* Structured Reviews */}
+                          <div className="p-5 space-y-6 flex-1 overflow-y-auto max-h-[500px]">
+                            
+                            {plagResult && !isCouncilView && (
+                              <div className="space-y-2 pt-3 border border-red-200 bg-red-50 p-4 rounded-xl mb-4">
+                                <h4 className="text-[12px] font-bold text-red-800 uppercase tracking-widest flex items-center gap-1.5">
+                                  <Clock className="w-4 h-4" /> KẾT QUẢ KIỂM ĐỊNH KỸ THUẬT (ĐẠO VĂN & AI)
+                                </h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs mt-2 border-t border-red-100 pt-3">
+                                   <div>
+                                      <strong className="text-red-900 block mb-1">1. Tỷ lệ trùng lặp Internet: </strong>
+                                      <span className="font-bold text-red-700 text-lg">{plagResult.totalDuplicatePercent}%</span>
+                                      <span className="text-natural-muted italic ml-2">Cảnh báo: {plagResult.warningLevel}</span>
+                                      <div className="text-[11px] text-red-600 mt-1 font-medium">(Quy định tỷ lệ trùng lặp không quá 30%)</div>
+                                   </div>
+                                   <div>
+                                      <strong className="text-purple-900 block mb-1">2. Tỷ lệ suy đoán do AI sinh: </strong>
+                                      <span className="font-bold text-purple-700 text-lg">{plagResult.aiGeneratedPercent !== undefined ? `${plagResult.aiGeneratedPercent}%` : 'Chưa phát hiện dấu hiệu'}</span>
+                                   </div>
+                                   <div className="col-span-1 sm:col-span-2">
+                                      <strong className="text-amber-900 block mb-1">3. Lỗi chính tả & Ngữ pháp: </strong>
+                                      <span className="font-bold text-amber-700">{plagResult.spellingErrors?.length || 0} lỗi phát hiện</span>
+                                   </div>
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="text-center font-bold text-natural-primary uppercase text-sm mb-4">
+                              {isCouncilView ? 'PHIẾU NHẬN XÉT, ĐÁNH GIÁ SÁNG KIẾN CỦA HỘI ĐỒNG THẨM ĐỊNH' : 'PHIẾU NHẬN XÉT, ĐÁNH GIÁ SÁNG KIẾN'}
                             </div>
+
+                            <div className="space-y-4">
+                              <h3 className="font-bold text-xs uppercase text-natural-text border-b border-natural-border pb-1">I. Nhận xét về nội dung sáng kiến</h3>
+                              
+                              {displayedEval.suCanThiet && (
+                                <div className="space-y-1">
+                                  <h4 className="font-semibold text-xs text-natural-primary">1. Sự cần thiết của sáng kiến</h4>
+                                  <div className="text-xs text-natural-text leading-relaxed pl-3 space-y-1">
+                                    {displayedEval.suCanThiet.analysis.map((line, idx) => <p key={idx}>{line}</p>)}
+                                    {displayedEval.suCanThiet.pros && displayedEval.suCanThiet.pros.length > 0 && (
+                                      <div className="mt-1">
+                                        <strong className="text-[11px] text-amber-900">Đánh giá chung:</strong>
+                                        <ul className="list-disc pl-4 text-[11px] text-natural-muted">
+                                          {displayedEval.suCanThiet.pros.map((p, i) => <li key={i}>{p}</li>)}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    <p className="italic font-medium text-natural-secondary pt-1">Đánh giá: {displayedEval.suCanThiet.levelName}</p>
+                                  </div>
+                                </div>
+                              )}
+
+                              {displayedEval.tinhMoi && (
+                                <div className="space-y-1">
+                                  <h4 className="font-semibold text-xs text-natural-primary">2. Tính mới, tính sáng tạo</h4>
+                                  <div className="text-xs text-natural-text leading-relaxed pl-3 space-y-1">
+                                    {displayedEval.tinhMoi.analysis.map((line, idx) => <p key={idx}>{line}</p>)}
+                                    {displayedEval.tinhMoi.pros && displayedEval.tinhMoi.pros.length > 0 && (
+                                      <div className="mt-1">
+                                        <strong className="text-[11px] text-blue-900">Điểm mới thể hiện ở:</strong>
+                                        <ul className="list-disc pl-4 text-[11px] text-natural-muted">
+                                          {displayedEval.tinhMoi.pros.map((p, i) => <li key={i}>{p}</li>)}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {displayedEval.tinhMoi.cons && displayedEval.tinhMoi.cons.length > 0 && (
+                                      <div className="mt-1">
+                                        <strong className="text-[11px] text-red-900">Hạn chế:</strong>
+                                        <ul className="list-disc pl-4 text-[11px] text-natural-muted">
+                                          {displayedEval.tinhMoi.cons.map((c, i) => <li key={i}>{c}</li>)}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    <p className="italic font-medium text-natural-secondary pt-1">Đánh giá: {displayedEval.tinhMoi.levelName}</p>
+                                  </div>
+                                </div>
+                              )}
+
+                              {displayedEval.giaiPhap && (
+                                <div className="space-y-1">
+                                  <h4 className="font-semibold text-xs text-natural-primary">3. Nội dung và chất lượng các giải pháp</h4>
+                                  <div className="text-xs text-natural-text leading-relaxed pl-3 space-y-1">
+                                    {displayedEval.giaiPhap.analysis.map((line, idx) => <p key={idx}>{line}</p>)}
+                                    {displayedEval.giaiPhap.pros && displayedEval.giaiPhap.pros.length > 0 && (
+                                      <div className="mt-1">
+                                        <strong className="text-[11px] text-indigo-900">Nhận xét chung về hệ thống giải pháp:</strong>
+                                        <ul className="list-disc pl-4 text-[11px] text-natural-muted">
+                                          {displayedEval.giaiPhap.pros.map((p, i) => <li key={i}>{p}</li>)}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {displayedEval.giaiPhap.cons && displayedEval.giaiPhap.cons.length > 0 && (
+                                      <div className="mt-1">
+                                        <strong className="text-[11px] text-red-900">Hạn chế:</strong>
+                                        <ul className="list-disc pl-4 text-[11px] text-natural-muted">
+                                          {displayedEval.giaiPhap.cons.map((c, i) => <li key={i}>{c}</li>)}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    <p className="italic font-medium text-natural-secondary pt-1">Đánh giá: {displayedEval.giaiPhap.levelName}</p>
+                                  </div>
+                                </div>
+                              )}
+
+                              {displayedEval.hieuQua && (
+                                <div className="space-y-1">
+                                  <h4 className="font-semibold text-xs text-natural-primary">4. Hiệu quả áp dụng</h4>
+                                  <div className="text-xs text-natural-text leading-relaxed pl-3 space-y-1">
+                                    {displayedEval.hieuQua.analysis.map((line, idx) => <p key={idx}>{line}</p>)}
+                                    {displayedEval.hieuQua.cons && displayedEval.hieuQua.cons.length > 0 && (
+                                      <div className="mt-1">
+                                        <strong className="text-[11px] text-red-900">Hạn chế về hiệu quả:</strong>
+                                        <ul className="list-disc pl-4 text-[11px] text-natural-muted">
+                                          {displayedEval.hieuQua.cons.map((c, i) => <li key={i}>{c}</li>)}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {displayedEval.hieuQua.levelName && <p className="italic font-medium text-natural-secondary pt-1">Đánh giá: {displayedEval.hieuQua.levelName}</p>}
+                                  </div>
+                                </div>
+                              )}
+
+                              {displayedEval.khaNangApDung && (
+                                <div className="space-y-1">
+                                  <h4 className="font-semibold text-xs text-natural-primary">5. Khả năng áp dụng và phạm vi ảnh hưởng</h4>
+                                  <div className="text-xs text-natural-text leading-relaxed pl-3 space-y-1">
+                                    {displayedEval.khaNangApDung.analysis.map((line, idx) => <p key={idx}>{line}</p>)}
+                                    {displayedEval.khaNangApDung.cons && displayedEval.khaNangApDung.cons.length > 0 && (
+                                      <div className="mt-1">
+                                        <strong className="text-[11px] text-red-900">Hạn chế về nhân rộng:</strong>
+                                        <ul className="list-disc pl-4 text-[11px] text-natural-muted">
+                                          {displayedEval.khaNangApDung.cons.map((c, i) => <li key={i}>{c}</li>)}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {displayedEval.khaNangApDung.levelName && <p className="italic font-medium text-natural-secondary pt-1">Đánh giá: {displayedEval.khaNangApDung.levelName}</p>}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {uuDiemList.length > 0 && (
+                              <div className="space-y-2">
+                                <h3 className="font-bold text-xs uppercase text-natural-text border-b border-natural-border pb-1">II. Ưu điểm</h3>
+                                <ul className="list-disc pl-5 text-xs text-natural-text space-y-1">
+                                  {uuDiemList.map((u: string, i: number) => <li key={i}>{u}</li>)}
+                                </ul>
+                              </div>
+                            )}
+
+                            {hanCheList.length > 0 && (
+                              <div className="space-y-2">
+                                <h3 className="font-bold text-xs uppercase text-natural-text border-b border-natural-border pb-1">III. Tồn tại, hạn chế</h3>
+                                <ul className="list-disc pl-5 text-xs text-natural-text space-y-1">
+                                  {hanCheList.map((u: string, i: number) => <li key={i}>{u}</li>)}
+                                </ul>
+                              </div>
+                            )}
+
+                            <div className="space-y-2">
+                              <h3 className="font-bold text-xs uppercase text-natural-text border-b border-natural-border pb-1">IV. Đánh giá chung</h3>
+                              <p className="text-xs text-natural-text font-medium leading-relaxed italic border-l-3 border-natural-primary pl-3 bg-natural-accent p-2 rounded-r">
+                                "{displayedEval.summary}"
+                              </p>
+                            </div>
+
+                            {/* Display legacy improvements if available */}
+                            {improvementsList.length > 0 && (
+                              <div className="space-y-2 pt-3 border-t border-natural-border bg-natural-accent/60 p-4 rounded-xl outline outline-1 outline-natural-border">
+                                <h4 className="text-[11px] font-bold text-natural-primary uppercase tracking-widest flex items-center gap-1.5">
+                                  <Bookmark className="w-3 h-3 text-natural-primary" /> Đề xuất cải thiện:
+                                </h4>
+                                <ol className="list-decimal pl-5 text-xs text-natural-text space-y-1 px-1">
+                                  {improvementsList.map((imp: string, idx: number) => (
+                                    <li key={idx} className="leading-relaxed">{imp}</li>
+                                  ))}
+                                </ol>
+                              </div>
+                            )}
+
                           </div>
 
-                          {/* Khả năng áp dụng, nhân rộng */}
-                          <div>
-                            <div className="flex justify-between text-[11px] font-semibold text-natural-text mb-1">
-                              <span>Khả năng áp dụng, nhân rộng</span>
-                              <span className="text-natural-primary font-bold">{currentResult.phamVi.score} / 20đ</span>
-                            </div>
-                            <div className="w-full bg-natural-accent h-2 rounded-full overflow-hidden flex border border-natural-border/30">
-                              <div className="bg-emerald-600 h-full rounded-full" style={{ width: `${(currentResult.phamVi.score / 20) * 100}%` }}></div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                          {/* Footer Action buttons */}
+                          <div className="p-4 border-t border-natural-border bg-[#faf9f5] flex justify-between items-center gap-3 shrink-0">
+                            <span className="text-[10px] text-natural-muted flex items-center gap-1">
+                              <Clock className="w-3 h-3" /> Đã thẩm định: {new Date(displayedEval.evaluatedAt || currentResult.evaluatedAt).toLocaleTimeString('vi-VN')}
+                            </span>
+                            
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowReAppraisalPanel(!showReAppraisalPanel);
+                                  if (!showReAppraisalPanel) {
+                                    setDesiredScore(displayedEval.totalScore || '');
+                                  }
+                                }}
+                                className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-[#f3f1e8] hover:bg-[#8b8b68] text-[#8b8b68] hover:text-white rounded-xl transition border border-[#8b8b68]/30 shadow-sm cursor-pointer"
+                              >
+                                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                                {showReAppraisalPanel 
+                                  ? (isCouncilView ? "Đóng bảng thẩm định" : "Đóng bảng chấm lại") 
+                                  : (isCouncilView ? "Thẩm định lại" : "Chấm điểm lại")
+                                }
+                              </button>
 
-                    {/* Structured Reviews */}
-                    <div className="p-5 space-y-6 flex-1 overflow-y-auto max-h-[500px]">
-                      
-                      {plagResult && (
-                        <div className="space-y-2 pt-3 border border-red-200 bg-red-50 p-4 rounded-xl mb-4">
-                          <h4 className="text-[12px] font-bold text-red-800 uppercase tracking-widest flex items-center gap-1.5">
-                            <Clock className="w-4 h-4" /> KẾT QUẢ KIỂM ĐỊNH KỸ THUẬT (ĐẠO VĂN & AI)
-                          </h4>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs mt-2 border-t border-red-100 pt-3">
-                             <div>
-                                <strong className="text-red-900 block mb-1">1. Tỷ lệ trùng lặp Internet: </strong>
-                                <span className="font-bold text-red-700 text-lg">{plagResult.totalDuplicatePercent}%</span>
-                                <span className="text-natural-muted italic ml-2">Cảnh báo: {plagResult.warningLevel}</span>
-                                <div className="text-[11px] text-red-600 mt-1 font-medium">(Quy định tỷ lệ trùng lặp không quá 30%)</div>
-                             </div>
-                             <div>
-                                <strong className="text-purple-900 block mb-1">2. Tỷ lệ suy đoán do AI sinh: </strong>
-                                <span className="font-bold text-purple-700 text-lg">{plagResult.aiGeneratedPercent !== undefined ? `${plagResult.aiGeneratedPercent}%` : 'Chưa phát hiện dấu hiệu'}</span>
-                             </div>
-                             <div className="col-span-1 sm:col-span-2">
-                                <strong className="text-amber-900 block mb-1">3. Lỗi chính tả & Ngữ pháp: </strong>
-                                <span className="font-bold text-amber-700">{plagResult.spellingErrors?.length || 0} lỗi phát hiện</span>
-                             </div>
+                              <button
+                                onClick={() => setShowPrintModal(true)}
+                                className="px-4 py-2 bg-natural-primary hover:bg-[#434330] border border-natural-primary hover:border-[#434330] text-[#eaeada] hover:text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow hover:shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Printer className="w-4.5 h-4.5" /> Thống kê & In phiếu
+                              </button>
+                            </div>
                           </div>
-                        </div>
+                        </>
                       )}
-
-                      <div className="text-center font-bold text-natural-primary uppercase text-sm mb-4">PHIẾU NHẬN XÉT, ĐÁNH GIÁ SÁNG KIẾN</div>
-
-                      <div className="space-y-4">
-                        <h3 className="font-bold text-xs uppercase text-natural-text border-b border-natural-border pb-1">I. Nhận xét về nội dung sáng kiến</h3>
-                        
-                        {currentResult.tinhCapThiet && (
-                          <div className="space-y-1">
-                            <h4 className="font-semibold text-xs text-natural-primary">1. Tính cấp thiết</h4>
-                            <div className="text-xs text-natural-text leading-relaxed pl-3 space-y-1">
-                              {currentResult.tinhCapThiet.analysis.map((line, idx) => <p key={idx}>{line}</p>)}
-                              <p className="italic font-medium text-natural-secondary pt-1">Đánh giá: {currentResult.tinhCapThiet.levelName}</p>
-                            </div>
-                          </div>
-                        )}
-
-                        {currentResult.tinhMoi && (
-                          <div className="space-y-1">
-                            <h4 className="font-semibold text-xs text-natural-primary">2. Tính mới, sáng tạo</h4>
-                            <div className="text-xs text-natural-text leading-relaxed pl-3 space-y-1">
-                              {currentResult.tinhMoi.analysis.map((line, idx) => <p key={idx}>{line}</p>)}
-                              <p className="italic font-medium text-natural-secondary pt-1">Đánh giá: {currentResult.tinhMoi.levelName}</p>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="space-y-1 pt-1">
-                          <h4 className="font-semibold text-xs text-natural-primary">3. Tính hiệu quả áp dụng</h4>
-                          <div className="text-xs text-natural-text leading-relaxed pl-3 space-y-1">
-                            {currentResult.hieuQua.analysis.map((line, idx) => <p key={idx}>{line}</p>)}
-                            {currentResult.hieuQua.levelName && <p className="italic font-medium text-natural-secondary pt-1">Đánh giá: {currentResult.hieuQua.levelName}</p>}
-                          </div>
-                        </div>
-
-                        <div className="space-y-1 pt-1">
-                          <h4 className="font-semibold text-xs text-natural-primary">4. Khả năng áp dụng, nhân rộng</h4>
-                          <div className="text-xs text-natural-text leading-relaxed pl-3 space-y-1">
-                            {currentResult.phamVi.analysis.map((line, idx) => <p key={idx}>{line}</p>)}
-                            {currentResult.phamVi.levelName && <p className="italic font-medium text-natural-secondary pt-1">Đánh giá: {currentResult.phamVi.levelName}</p>}
-                          </div>
-                        </div>
-
-                        {currentResult.tinhKhoaHoc && (
-                          <div className="space-y-1 pt-1">
-                            <h4 className="font-semibold text-xs text-natural-primary">5. Tính khoa học, hình thức</h4>
-                            <div className="text-xs text-natural-text leading-relaxed pl-3 space-y-1">
-                              {currentResult.tinhKhoaHoc.analysis.map((line, idx) => <p key={idx}>{line}</p>)}
-                              <p className="italic font-medium text-natural-secondary pt-1">Đánh giá: {currentResult.tinhKhoaHoc.levelName}</p>
-                            </div>
-                          </div>
-                        )}
-
-                        {currentResult.minhChung && (
-                          <div className="space-y-1 pt-1">
-                            <h4 className="font-semibold text-xs text-natural-primary">6. Minh chứng, số liệu</h4>
-                            <div className="text-xs text-natural-text leading-relaxed pl-3 space-y-1">
-                              {currentResult.minhChung.analysis.map((line, idx) => <p key={idx}>{line}</p>)}
-                              <p className="italic font-medium text-natural-secondary pt-1">Đánh giá: {currentResult.minhChung.levelName}</p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {currentResult.uuDiem && currentResult.uuDiem.length > 0 && (
-                        <div className="space-y-2">
-                          <h3 className="font-bold text-xs uppercase text-natural-text border-b border-natural-border pb-1">II. Ưu điểm</h3>
-                          <ul className="list-disc pl-5 text-xs text-natural-text space-y-1">
-                            {currentResult.uuDiem.map((u, i) => <li key={i}>{u}</li>)}
-                          </ul>
-                        </div>
-                      )}
-
-                      {currentResult.hanChe && currentResult.hanChe.length > 0 && (
-                        <div className="space-y-2">
-                          <h3 className="font-bold text-xs uppercase text-natural-text border-b border-natural-border pb-1">III. Tồn tại, hạn chế</h3>
-                          <ul className="list-disc pl-5 text-xs text-natural-text space-y-1">
-                            {currentResult.hanChe.map((u, i) => <li key={i}>{u}</li>)}
-                          </ul>
-                        </div>
-                      )}
-
-                      <div className="space-y-2">
-                        <h3 className="font-bold text-xs uppercase text-natural-text border-b border-natural-border pb-1">IV. Đánh giá chung</h3>
-                        <p className="text-xs text-natural-text font-medium leading-relaxed italic border-l-3 border-natural-primary pl-3 bg-natural-accent p-2 rounded-r">
-                          "{currentResult.summary}"
-                        </p>
-                      </div>
-
-                      {/* Display legacy improvements if available */}
-                      {currentResult.improvements && currentResult.improvements.length > 0 && (
-                        <div className="space-y-2 pt-3 border-t border-natural-border bg-natural-accent/60 p-4 rounded-xl outline outline-1 outline-natural-border">
-                          <h4 className="text-[11px] font-bold text-natural-primary uppercase tracking-widest flex items-center gap-1.5">
-                            <Bookmark className="w-3 h-3 text-natural-primary" /> Đề xuất cải thiện:
-                          </h4>
-                          <ol className="list-decimal pl-5 text-xs text-natural-text space-y-1 px-1">
-                            {currentResult.improvements.map((imp, idx) => (
-                              <li key={idx} className="leading-relaxed">{imp}</li>
-                            ))}
-                          </ol>
-                        </div>
-                      )}
-
                     </div>
-
-                    {/* Footer Action buttons */}
-                    <div className="p-4 border-t border-natural-border bg-[#faf9f5] flex justify-between gap-3 shrink-0">
-                      <span className="text-[10px] text-natural-muted flex items-center gap-1">
-                        <Clock className="w-3 h-3" /> Đã thẩm định: {new Date(currentResult.evaluatedAt).toLocaleTimeString('vi-VN')}
-                      </span>
-                      
-                      <button
-                        onClick={() => setShowPrintModal(true)}
-                        className="px-4 py-2 bg-natural-primary hover:bg-[#434330] border border-natural-primary hover:border-[#434330] text-[#eaeada] hover:text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow hover:shadow-md transition flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Printer className="w-4.5 h-4.5" /> Thống kê & In phiếu
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
 
 
 
@@ -2589,25 +3952,69 @@ export default function App() {
       {/* FOOTER */}
       <footer className="bg-[#2c2c1e] text-natural-border/70 py-6 border-t border-natural-border/10 text-center text-xs mt-auto no-print">
         <div className="max-w-[1600px] mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>© 2026 Hội đồng Sáng kiến xã Hàm Yên, tỉnh Tuyên Quang. Bảo lưu mọi quyền.</p>
+          <p>© 2026 Hệ thống hỗ trợ Sáng kiến cải tiến. Bảo lưu mọi quyền.</p>
           <div className="flex items-center gap-4 text-natural-border/40">
             <span>Phiên bản 2.5 (Tự động hóa AI)</span>
-            <span>•</span>
-            <span>Quy chế Quyết định số 270/QĐ-HĐSK</span>
           </div>
         </div>
       </footer>
 
-      {/* 🏛️ PRINT MODAL (Replicating the official paper-work format directly) */}
-      {showPrintModal && currentResult && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto p-4 md:p-8 print-force-static">
-          <div className="bg-white text-black w-full max-w-4xl rounded-2xl shadow-2xl relative flex flex-col my-4 print-force-static">
+      {/* 🏛️ PRINT MODAL (Chuẩn mẫu 100% không tự sáng tạo) */}
+      {showPrintModal && currentResult && (() => {
+        const prCouncilName = currentResult.councilName || councilName || 'CỦA THÀNH VIÊN TỔ THẨM ĐỊNH SÁNG KIẾN';
+        const prCouncilMembers: CouncilMember[] = currentResult.councilMembers || councilMembers || [];
+        const prMember1Name = currentResult.member1Name || member1Name || '';
+        const prMember1Unit = currentResult.member1Unit || member1Unit || '';
+        const prMember1Role = currentResult.member1Role || member1Role || '';
+        const prMember2Name = currentResult.member2Name || member2Name || '';
+        const prMember2Unit = currentResult.member2Unit || member2Unit || '';
+        const prMember2Role = currentResult.member2Role || member2Role || '';
+        const prMember3Name = currentResult.member3Name || member3Name || '';
+        const prMember3Unit = currentResult.member3Unit || member3Unit || '';
+        const prMember3Role = currentResult.member3Role || member3Role || '';
+
+        const hasPrCustomAppraisalMembers = prCouncilMembers.length > 0
+          ? prCouncilMembers.some(m => m.name.trim() !== '')
+          : Boolean(prMember1Name.trim() || prMember2Name.trim() || prMember3Name.trim());
+
+        const isCouncilTarget = printTarget === 'council' && currentResult.councilResult;
+        const evalToUse = isCouncilTarget ? currentResult.councilResult! : currentResult;
+
+        return (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto p-4 md:p-8 print-force-static">
+            <div className="bg-white text-black w-full max-w-4xl rounded-2xl shadow-2xl relative flex flex-col my-4 print-force-static">
             
             {/* Modal header options */}
             <div className="bg-natural-accent border-b border-natural-border px-6 py-4 flex flex-col md:flex-row items-center justify-between no-print rounded-t-2xl gap-3">
-              <h3 className="font-bold text-natural-primary flex items-center gap-1.5 text-sm md:text-base">
-                <Printer className="w-5 h-5 text-natural-primary" /> Phiếu Chấm Điểm & Đánh Giá
-              </h3>
+              <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
+                <h3 className="font-bold text-natural-primary flex items-center gap-1.5 text-sm md:text-base">
+                  <Printer className="w-5 h-5 text-natural-primary" /> Phiếu Nhận Xét, Đánh Giá Sáng Kiến
+                </h3>
+                {currentResult.councilResult && (
+                  <div className="flex items-center gap-1 bg-natural-muted/10 p-1 rounded-xl border border-natural-border">
+                    <button
+                      onClick={() => setPrintTarget('department')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        printTarget === 'department'
+                          ? 'bg-natural-primary text-white shadow-sm'
+                          : 'text-natural-muted hover:text-natural-primary'
+                      }`}
+                    >
+                      Sơ bộ (Phòng VH-XH)
+                    </button>
+                    <button
+                      onClick={() => setPrintTarget('council')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        printTarget === 'council'
+                          ? 'bg-natural-primary text-white shadow-sm'
+                          : 'text-natural-muted hover:text-natural-primary'
+                      }`}
+                    >
+                      Hội đồng Thẩm định
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-2 flex-wrap justify-center">
                 <button
                   onClick={() => handleDownloadWord()}
@@ -2634,556 +4041,290 @@ export default function App() {
               </div>
             </div>
 
-            {/* Printable Area content (Strict administrative Vietnam layout) */}
+            {/* Printable Area content (Strict administrative Vietnam layout - Matches PDF format exactly) */}
             <div ref={printRef} className="p-8 md:p-12 overflow-y-auto flex-1 font-serif leading-relaxed text-black max-w-[210mm] mx-auto bg-white print-force-static text-justify content-justify" style={{ fontFamily: '"Times New Roman", Times, serif', fontSize: '14pt' }}>
               
               {/* Top Banner */}
-              <table className="header-banner" style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '2rem', border: 'none' }} border={0}>
-                <tbody>
-                  <tr style={{ border: 'none' }}>
-                    <td style={{ width: '45%', textAlign: 'center', verticalAlign: 'top', padding: 0, border: 'none' }}>
-                      <div style={{ fontWeight: 'bold', fontSize: '13pt' }}>UBND XÃ HÀM YÊN</div>
-                      <div style={{ fontWeight: 'bold', fontSize: '13pt' }}>HỘI ĐỒNG SÁNG KIẾN</div>
-                      <div style={{ borderBottom: '1px solid black', width: '120px', margin: '4px auto 0' }}></div>
-                      <div style={{ fontStyle: 'italic', fontSize: '13pt', marginTop: '4px', fontWeight: 'normal' }}>
-                        (Thành lập theo QĐ số 615 /QĐ-UBND<br/>ngày 04/08/2025)
-                      </div>
-                    </td>
-                    <td style={{ width: '55%', textAlign: 'center', verticalAlign: 'top', padding: 0, border: 'none' }}>
-                      <div style={{ fontWeight: 'bold', fontSize: '13pt' }}>CỘNG HOÀ XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
-                      <div style={{ fontWeight: 'bold', fontSize: '13pt' }}>Độc lập - Tự do - Hạnh phúc</div>
-                      <div style={{ borderBottom: '1.5px solid black', width: '160px', margin: '4px auto 0' }}></div>
-                      <div style={{ fontStyle: 'italic', fontSize: '14pt', marginTop: '12px', fontWeight: 'normal' }}>
-                        Hàm Yên, ngày {new Date(currentResult.evaluatedAt).getDate()} tháng {new Date(currentResult.evaluatedAt).getMonth() + 1} năm {new Date(currentResult.evaluatedAt).getFullYear()}
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-
-              {/* Title doc */}
-              <div style={{ lineHeight: '150%' }}>&nbsp;</div>
-              <div style={{ textAlign: 'center', marginBottom: '12pt' }}>
-                <div className="font-bold uppercase tracking-tight" style={{ fontSize: '14pt', textAlign: 'center' }}>
-                  PHIẾU ĐÁNH GIÁ
+              <div className="header-banner" style={{ marginBottom: '1.5rem' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '13pt' }}>CỘNG HOÀ XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '13pt' }}>Độc lập - Tự do - Hạnh phúc</div>
+                  <div style={{ borderBottom: '1.5px solid black', width: '160px', margin: '4px auto 0' }}></div>
                 </div>
-                <div className="font-bold uppercase tracking-wider" style={{ fontSize: '14pt', textAlign: 'center' }}>
-                  HỒ SƠ ĐỀ NGHỊ CÔNG NHẬN SÁNG KIẾN
+                <div style={{ textAlign: 'right', fontStyle: 'italic', fontSize: '14pt', marginTop: '12px', fontWeight: 'normal' }}>
+                  Hàm Yên, ngày {new Date(evalToUse.evaluatedAt || currentResult.evaluatedAt).getDate()} tháng {new Date(evalToUse.evaluatedAt || currentResult.evaluatedAt).getMonth() + 1} năm {new Date(evalToUse.evaluatedAt || currentResult.evaluatedAt).getFullYear()}
                 </div>
               </div>
 
-              {/* I. THÔNG TIN CHUNG */}
-              <div>
-                <h4 className="font-bold mb-2">I. THÔNG TIN CHUNG</h4>
-                <div className="space-y-1 mb-6">
+              {/* Title doc */}
+              <div style={{ lineHeight: '150%' }}>&nbsp;</div>
+              <div style={{ textAlign: 'center', marginBottom: '18pt' }}>
+                {isCouncilTarget ? (
+                  <>
+                    <div className="font-bold uppercase tracking-tight" style={{ fontSize: '15pt', textAlign: 'center', fontWeight: 'bold' }}>
+                      PHIẾU NHẬN XÉT, ĐÁNH GIÁ SÁNG KIẾN
+                    </div>
+                    <div className="font-bold uppercase tracking-tight" style={{ fontSize: '14pt', textAlign: 'center', fontWeight: 'bold', marginTop: '4px' }}>
+                      HỘI ĐỒNG THẨM ĐỊNH SÁNG KIẾN
+                    </div>
+                  </>
+                ) : hasPrCustomAppraisalMembers ? (
+                  <>
+                    <div className="font-bold uppercase tracking-tight" style={{ fontSize: '15pt', textAlign: 'center', fontWeight: 'bold' }}>
+                      PHIẾU NHẬN XÉT, ĐÁNH GIÁ SÁNG KIẾN
+                    </div>
+                    <div className="font-bold uppercase tracking-tight" style={{ fontSize: '14pt', textAlign: 'center', fontWeight: 'bold', marginTop: '4px' }}>
+                      {prCouncilName}
+                    </div>
+                  </>
+                ) : (
+                  <div className="font-bold uppercase tracking-tight" style={{ fontSize: '15pt', textAlign: 'center', fontWeight: 'bold' }}>
+                    PHIẾU NHẬN XÉT, ĐÁNH GIÁ SÁNG KIẾN
+                  </div>
+                )}
+              </div>
+
+              {/* Thông tin tác giả trực tiếp theo mẫu */}
+              {hasPrCustomAppraisalMembers && !isCouncilTarget ? (
+                <div style={{ marginBottom: '18pt', lineHeight: '1.6' }} className="space-y-2">
+                  {prCouncilMembers.length > 0 ? (
+                    <>
+                      {prCouncilMembers.map((m, idx) => (
+                        <div key={m.id || idx} className="space-y-1">
+                          <div><strong>{idx + 1}. Họ và tên Thành viên {idx + 1}:</strong> {m.name || '...................................................'}</div>
+                          <div className="pl-6">- Đơn vị công tác: {m.unit || '...................................................'}</div>
+                          <div className="pl-6">- Chức vụ: {m.role || '...................................................'}</div>
+                        </div>
+                      ))}
+                      <div className="pt-2"><strong>{prCouncilMembers.length + 1}. Tên giải pháp đề nghị công nhận sáng kiến:</strong> {currentResult.initiativeTitle ? `“${currentResult.initiativeTitle}”` : '...................................................'}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div><strong>1. Họ và tên Thành viên 1:</strong> {prMember1Name || '...................................................'}</div>
+                      <div className="pl-6">- Đơn vị công tác: {prMember1Unit || '...................................................'}</div>
+                      <div className="pl-6">- Chức vụ: {prMember1Role || '...................................................'}</div>
+
+                      <div><strong>2. Họ và tên Thành viên 2:</strong> {prMember2Name || '...................................................'}</div>
+                      <div className="pl-6">- Đơn vị công tác: {prMember2Unit || '...................................................'}</div>
+                      <div className="pl-6">- Chức vụ: {prMember2Role || '...................................................'}</div>
+
+                      <div><strong>3. Họ và tên Thành viên 3:</strong> {prMember3Name || '...................................................'}</div>
+                      <div className="pl-6">- Đơn vị công tác: {prMember3Unit || '...................................................'}</div>
+                      <div className="pl-6">- Chức vụ: {prMember3Role || '...................................................'}</div>
+
+                      <div><strong>4. Tên giải pháp đề nghị công nhận sáng kiến:</strong> {currentResult.initiativeTitle ? `“${currentResult.initiativeTitle}”` : '...................................................'}</div>
+                    </>
+                  )}
+
+                  <div className="pt-3">- Họ và tên Tác giả: {currentResult.teacher.teacherName || '...................................................'}</div>
+                  <div>- Chức vụ, đơn vị công tác: {currentResult.teacher.role || '............................'}, {currentResult.teacher.schoolName || '............................................'}</div>
+                  <div>- Điện thoại: {currentResult.teacher.phone || '......................................'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Email:</strong> {currentResult.teacher.email || '..........................'}</div>
+                </div>
+              ) : (
+                <div style={{ marginBottom: '18pt', lineHeight: '1.6' }} className="space-y-1">
                   <div><strong>Họ và tên tác giả:</strong> {currentResult.teacher.teacherName || '...................................................'}</div>
-                  <div><strong>Chức vụ, đơn vị công tác:</strong> {currentResult.teacher.role ? `${currentResult.teacher.role}, ` : ''}{currentResult.teacher.schoolName || '...................................................'}</div>
-                  <div><strong>Tên sáng kiến:</strong> {currentResult.initiativeTitle}</div>
-                  <div><strong>Lĩnh vực áp dụng:</strong> {currentResult.teacher.subject || '...................................................'}</div>
-                  <div className="mt-1">
-                    <strong>Phạm vi đề nghị công nhận:</strong>&nbsp;&nbsp;&nbsp;&nbsp;
-                    <span>☑ Cấp cơ sở</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                    <span>□ Cấp tỉnh</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                    <span>□ Toàn quốc</span>
-                  </div>
-                  <div className="mt-2"><strong>Người nhận xét:</strong> {reviewerName || '...................................................'}</div>
-                  <div><strong>Ngày nhận xét, đánh giá:</strong> Ngày {new Date(currentResult.evaluatedAt).getDate()} tháng {new Date(currentResult.evaluatedAt).getMonth() + 1} năm {new Date(currentResult.evaluatedAt).getFullYear()}</div>
+                  <div><strong>Chức vụ:</strong> {currentResult.teacher.role || '...................................................'}</div>
+                  <div><strong>Đơn vị công tác:</strong> {currentResult.teacher.schoolName || '...................................................'}</div>
+                  <div><strong>Tên sáng kiến:</strong> {currentResult.initiativeTitle ? `“${currentResult.initiativeTitle}”` : '...................................................'}</div>
+                  <div><strong>Lĩnh vực áp dụng:</strong> {currentResult.teacher.subject || 'Giáo dục mầm non'}</div>
+                  <div><strong>Điện thoại:</strong> {currentResult.teacher.phone || '......................................'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Email:</strong> {currentResult.teacher.email || '..........................'}</div>
                 </div>
+              )}
 
-                <h4 className="font-bold mb-4 mt-6">II. NHẬN XÉT, ĐÁNH GIÁ THEO CÁC TIÊU CHÍ</h4>
+              {/* I. NHẬN XÉT, ĐÁNH GIÁ CHI TIẾT */}
+              <div>
+                <h4 className="font-bold mb-4 mt-6" style={{ fontSize: '14pt', fontWeight: 'bold' }}>I. NHẬN XÉT, ĐÁNH GIÁ CHI TIẾT</h4>
 
-                {/* 1. Điểm Mới */}
+                {/* 1. Sự cần thiết */}
                 <div className="mb-6">
-                  <div className="font-bold mb-2 uppercase">1. ĐÁNH GIÁ TÍNH MỚI, TÍNH SÁNG TẠO (Tối đa 10 điểm)</div>
-                  <div className="italic mb-2 font-medium">1.1. Nội dung nhận xét</div>
-                  <div className="mb-2 italic">a) Mức độ mới của giải pháp</div>
-                  <div className="space-y-1 mb-2 ml-2">
-                    <div>{getRadioCheck(currentResult.tinhMoi?.score, 10) === 0 ? '☑' : '□'} Hoàn toàn mới</div>
-                    <div>{getRadioCheck(currentResult.tinhMoi?.score, 10) === 1 ? '☑' : '□'} Cải tiến từ giải pháp đã có</div>
-                    <div>{getRadioCheck(currentResult.tinhMoi?.score, 10) === 2 ? '☑' : '□'} Kết hợp các giải pháp cũ theo hướng mới</div>
-                    <div>{getRadioCheck(currentResult.tinhMoi?.score, 10) === 3 ? '☑' : '□'} Chưa thể hiện rõ tính mới</div>
+                  <div className="font-bold mb-2 uppercase">1. Về sự cần thiết của sáng kiến</div>
+                  <div style={{ textAlign: 'justify' }} className="mb-3 leading-relaxed">
+                    {evalToUse.suCanThiet?.analysis && evalToUse.suCanThiet.analysis.length > 0 
+                      ? renderList(evalToUse.suCanThiet.analysis)
+                      : 'Sáng kiến được lựa chọn nghiên cứu xuất phát từ yêu cầu thực tiễn của công tác giáo dục trẻ. Việc nghiên cứu và áp dụng sáng kiến là cần thiết, phù hợp với yêu cầu đổi mới giáo dục hiện nay, góp phần nâng cao chất lượng chăm sóc, giáo dục.'}
                   </div>
-                  <div className="mb-2 italic">Nhận xét:</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[60px] leading-relaxed">
-                    {currentResult.tinhMoi?.analysis && currentResult.tinhMoi.analysis.length > 0 
-                      ? renderList(currentResult.tinhMoi.analysis)
-                      : (currentResult.tinhMoi && currentResult.tinhMoi.score >= 8.5 
-                          ? 'Sáng kiến có tính mới đột phá, hoàn toàn khác biệt so với các giải pháp trước đây.' 
-                          : currentResult.tinhMoi && currentResult.tinhMoi.score >= 7
-                          ? 'Sáng kiến có sự cải tiến và sáng tạo dựa trên các phương pháp cũ.'
-                          : 'Sáng kiến có sự kết hợp các giải pháp nhưng tính mới chưa thật sự nổi bật.')}
+                  <div className="font-bold italic mb-1">Đánh giá:</div>
+                  <div className="space-y-0.5 mb-2 ml-4">
+                    <div>- Xác định đúng vấn đề trọng tâm.</div>
+                    <div>- Phù hợp chủ trương đổi mới giáo dục.</div>
+                    <div>- Có giá trị thực tiễn cao.</div>
                   </div>
-
-                  <div className="mb-2 italic">b) Điểm mới nổi bật của sáng kiến</div>
-                  <div className="mb-2">Giải pháp đổi mới ở nội dung nào:</div>
-                  <div className="space-y-1 mb-2 ml-2">
-                    <div>{currentResult.tinhMoi && currentResult.tinhMoi.score >= 5 ? '☑' : '□'} Phương pháp thực hiện</div>
-                    <div>{currentResult.tinhMoi && currentResult.tinhMoi.score >= 7 ? '☑' : '□'} Quy trình thực hiện</div>
-                    <div>{currentResult.tinhMoi && currentResult.tinhMoi.score >= 6 ? '☑' : '□'} Cách tổ chức</div>
-                    <div>□ Công cụ hỗ trợ</div>
-                    <div>□ Phương pháp quản lý</div>
-                    <div>{currentResult.tinhMoi && currentResult.tinhMoi.score >= 8.5 ? '☑' : '□'} Ứng dụng công nghệ</div>
-                    <div>□ Khác: ...................................................................</div>
-                  </div>
-                  <div className="mb-2 italic">Nhận xét cụ thể:</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
-                    {currentResult.tinhMoi?.pros && currentResult.tinhMoi.pros.length > 0 
-                      ? renderList(currentResult.tinhMoi.pros)
-                      : (currentResult.tinhMoi && currentResult.tinhMoi.score >= 7 
-                          ? 'Sáng kiến có tính mới rõ rệt trong việc đổi mới phương pháp thực hiện và cách tổ chức.' 
-                          : 'Sáng kiến có cải tiến từ giải pháp cũ nhưng chưa có điểm mới thực sự đột phá.')}
-                  </div>
-
-                  <div className="mb-2 italic">c) So sánh với giải pháp thông thường trước đây</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
-                    {currentResult.tinhMoi?.comparison && currentResult.tinhMoi.comparison.length > 0 
-                      ? renderList(currentResult.tinhMoi.comparison)
-                      : (currentResult.tinhMoi && currentResult.tinhMoi.score >= 7 
-                          ? 'Giải pháp có nhiều điểm ưu việt, khắc phục được các hạn chế của phương pháp giáo dục truyền thống.' 
-                          : 'Chưa thể hiện rõ sự vượt trội so với các phương pháp hiện hành.')}
-                  </div>
-
-                  <div className="mb-2 italic">d) Hạn chế về tính mới (nếu có)</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
-                     {currentResult.tinhMoi?.cons && currentResult.tinhMoi.cons.length > 0
-                        ? renderList(currentResult.tinhMoi.cons)
-                        : (currentResult.tinhMoi && currentResult.tinhMoi.score >= 8
-                            ? ''
-                            : 'Giải pháp mang tính kế thừa, thiếu các yếu tố đột phá để làm nên một mô hình hoàn toàn mới.')}
-                  </div>
-
-                  <div className="italic mb-1 font-medium">1.2. Điểm chấm</div>
-                  <div className="mb-4">Điểm đề xuất: <strong>{currentResult.tinhMoi?.score || '.............'}</strong> / 10 điểm</div>
+                  <div className="mb-4"><strong>Điểm: {evalToUse.suCanThiet?.score || 0}/10 điểm</strong></div>
                 </div>
 
-                {/* 2. Hiệu quả */}
+                {/* 2. Tính mới */}
                 <div className="mb-6">
-                  <div className="font-bold mb-2 uppercase">2. ĐÁNH GIÁ TÍNH HIỆU QUẢ (Tối đa 40 điểm)</div>
-                  <div className="italic mb-2 font-medium">2.1. Hiệu quả thực tiễn</div>
-                  <div className="mb-2 italic">a) Hiệu quả chuyên môn</div>
-                  <div className="mb-1">Nâng cao chất lượng công việc:</div>
-                  <div className="space-y-1 mb-2 ml-2">
-                    <div>{getRadioCheck(currentResult.hieuQua?.score, 40) === 0 ? '☑' : '□'} Rõ rệt</div>
-                    <div>{getRadioCheck(currentResult.hieuQua?.score, 40) === 1 ? '☑' : '□'} Khá</div>
-                    <div>{getRadioCheck(currentResult.hieuQua?.score, 40) === 2 ? '☑' : '□'} Trung bình</div>
-                    <div>{getRadioCheck(currentResult.hieuQua?.score, 40) === 3 ? '☑' : '□'} Chưa rõ</div>
+                  <div className="font-bold mb-2 uppercase">2. Về tính mới, tính sáng tạo của sáng kiến</div>
+                  <div style={{ textAlign: 'justify' }} className="mb-2 leading-relaxed">
+                    {evalToUse.tinhMoi?.analysis && evalToUse.tinhMoi.analysis.length > 0 
+                      ? renderList(evalToUse.tinhMoi.analysis)
+                      : 'Sáng kiến đã xây dựng được hệ thống các biện pháp chỉ đạo tương đối đồng bộ nhằm nâng cao chất lượng giáo dục tại đơn vị.'}
                   </div>
-                  <div className="mb-2 italic">Nhận xét:</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[60px] leading-relaxed">
-                    {currentResult.hieuQua?.analysis && currentResult.hieuQua.analysis.length > 0 
-                      ? renderList(currentResult.hieuQua.analysis)
-                      : (currentResult.hieuQua && currentResult.hieuQua.score >= 32 
-                          ? 'Hiệu quả chuyên môn được nâng cao rõ rệt, cải thiện đáng kể chất lượng công việc.' 
-                          : currentResult.hieuQua && currentResult.hieuQua.score >= 25
-                          ? 'Đã mang lại hiệu quả chuyên môn khá tốt trong phạm vi áp dụng.'
-                          : 'Hiệu quả chuyên môn ở mức trung bình, cần thêm thời gian để kiểm chứng.')}
+                  {evalToUse.tinhMoi?.cons && evalToUse.tinhMoi.cons.length > 0 && (
+                    <div className="mb-2 text-justify">
+                      <span className="font-bold italic">Hạn chế: </span>
+                      {renderList(evalToUse.tinhMoi.cons, "")}
+                    </div>
+                  )}
+                  <div className="font-bold italic mb-1">Đánh giá:</div>
+                  <div className="space-y-0.5 mb-2 ml-4">
+                    <div>- Có tính mới trong phạm vi cơ sở.</div>
+                    <div>- Có sự sáng tạo trong tổ chức thực hiện.</div>
+                    <div>- Tính đổi mới khá rõ nét.</div>
                   </div>
-
-                  <div className="mb-2 italic">b) Hiệu quả kinh tế (nếu có)</div>
-                  <div className="mb-1">Tiết kiệm:</div>
-                  <div className="space-y-1 mb-2 ml-2">
-                    <div>{currentResult.hieuQua && currentResult.hieuQua.score >= 25 ? '☑' : '□'} Thời gian</div>
-                    <div>□ Kinh phí</div>
-                    <div>{currentResult.hieuQua && currentResult.hieuQua.score >= 28 ? '☑' : '□'} Nhân lực</div>
-                    <div>{currentResult.hieuQua && currentResult.hieuQua.score >= 30 ? '☑' : '□'} Hồ sơ, thủ tục</div>
-                    <div>□ Khác: ...................................................................</div>
-                  </div>
-                  <div className="mb-2 italic">Nhận xét:</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
-                    {currentResult.hieuQua && currentResult.hieuQua.score >= 25 ? 'Sáng kiến góp phần tiết kiệm thời gian, nhân lực đáng kể khi áp dụng vào thực tế giảng dạy và quản lý.' : 'Chưa có minh chứng rõ ràng về hiệu quả kinh tế hoặc tiết kiệm chi phí.'}
-                  </div>
-
-                  <div className="mb-2 italic">c) Hiệu quả xã hội</div>
-                  <div className="mb-1">Tác động tích cực đến:</div>
-                  <div className="space-y-1 mb-2 ml-2">
-                    <div>{currentResult.hieuQua && currentResult.hieuQua.score >= 20 ? '☑' : '□'} Người học</div>
-                    <div>{currentResult.hieuQua && currentResult.hieuQua.score >= 24 ? '☑' : '□'} Cơ quan, đơn vị</div>
-                    <div>□ Nhân dân</div>
-                    <div>□ Phụ huynh</div>
-                    <div>{currentResult.hieuQua && currentResult.hieuQua.score >= 32 ? '☑' : '□'} Cộng đồng</div>
-                    <div>{currentResult.hieuQua && currentResult.hieuQua.score >= 35 ? '☑' : '□'} Chuyển đổi số</div>
-                    <div>□ Cải cách hành chính</div>
-                  </div>
-                  <div className="mb-2 italic">Nhận xét:</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
-                    {currentResult.hieuQua?.pros && currentResult.hieuQua.pros.length > 0 
-                      ? renderList(currentResult.hieuQua.pros)
-                      : (currentResult.hieuQua && currentResult.hieuQua.score >= 25 
-                          ? 'Sáng kiến mang lại hiệu quả xã hội tích cực, đặc biệt đối với người học và cơ quan đơn vị.' 
-                          : 'Hiệu quả xã hội ở mức khá, cần có thêm thời gian để đánh giá tác động sâu rộng hơn.')}
-                  </div>
-
-                  <div className="mb-2 italic">d) Minh chứng hiệu quả</div>
-                  <div className="space-y-1 mb-2 ml-2">
-                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 10 ? '☑' : '□'} Có số liệu đối chiếu trước – sau</div>
-                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 8 ? '☑' : '□'} Có bảng biểu minh chứng</div>
-                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 12 ? '☑' : '□'} Có hình ảnh/video minh chứng</div>
-                    <div>□ Có xác nhận của đơn vị</div>
-                    <div>{currentResult.minhChung && currentResult.minhChung.score < 8 ? '☑' : '□'} Chưa đầy đủ minh chứng</div>
-                  </div>
-                  <div className="mb-2 italic">Nhận xét:</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
-                    {currentResult.minhChung && currentResult.minhChung.score >= 10 ? 'Minh chứng được cung cấp tương đối đầy đủ, có bảng biểu và số liệu minh hoạ rõ ràng.' : 'Chưa cung cấp đầy đủ minh chứng thực tế, hình ảnh hoặc số liệu để tăng tính thuyết phục.'}
-                  </div>
-
-                  <div className="mb-2 italic">e) Tồn tại, hạn chế</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
-                    {(currentResult.hanChe && currentResult.hanChe.length > 0) || (currentResult.hieuQua?.cons && currentResult.hieuQua.cons.length > 0)
-                      ? renderList(currentResult.hanChe || currentResult.hieuQua?.cons)
-                      : (currentResult.hieuQua && currentResult.hieuQua.score >= 32
-                          ? ''
-                          : 'Cần có thêm những thống kê chi tiết để đánh giá định lượng được hiệu quả một cách chính xác nhất.')}
-                  </div>
-
-                  <div className="italic mb-1 font-medium">2.2. Điểm chấm</div>
-                  <div className="mb-4">Điểm đề xuất: <strong>{currentResult.hieuQua?.score || '.............'}</strong> / 40 điểm</div>
+                  <div className="mb-4"><strong>Điểm: {evalToUse.tinhMoi?.score || 0}/20 điểm</strong></div>
                 </div>
 
-                {/* 3. Khả năng áp dụng */}
+                {/* 3. Nội dung và giải pháp */}
                 <div className="mb-6">
-                  <div className="font-bold mb-2 uppercase">3. ĐÁNH GIÁ KHẢ NĂNG ÁP DỤNG, NHÂN RỘNG (Tối đa 20 điểm)</div>
-                  <div className="italic mb-2 font-medium">3.1. Khả năng áp dụng</div>
-                  <div className="space-y-1 mb-2 ml-2">
-                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 14 ? '☑' : '□'} Dễ áp dụng</div>
-                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 17 ? '☑' : '□'} Có thể triển khai diện rộng</div>
-                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 12 ? '☑' : '□'} Phù hợp thực tiễn cơ sở</div>
-                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 15 ? '☑' : '□'} Ít kinh phí</div>
-                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 16 ? '☑' : '□'} Dễ thực hiện</div>
-                    <div>{currentResult.phamVi && currentResult.phamVi.score < 14 ? '☑' : '□'} Khó triển khai diện rộng</div>
+                  <div className="font-bold mb-2 uppercase">3. Về nội dung và chất lượng các giải pháp</div>
+                  <div style={{ textAlign: 'justify' }} className="mb-2 leading-relaxed">
+                    {evalToUse.giaiPhap?.analysis && evalToUse.giaiPhap.analysis.length > 0 
+                      ? renderList(evalToUse.giaiPhap.analysis)
+                      : 'Tác giả đã xây dựng hệ thống giải pháp có tính logic, đồng bộ và phù hợp với mục tiêu đề ra.'}
                   </div>
-                  <div className="mb-2 italic">Nhận xét:</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[60px] leading-relaxed">
-                    {currentResult.phamVi?.analysis && currentResult.phamVi.analysis.length > 0 
-                      ? renderList(currentResult.phamVi.analysis)
-                      : (currentResult.phamVi && currentResult.phamVi.score >= 15 
-                          ? 'Sáng kiến dễ áp dụng, triển khai nhanh và tiết kiệm chi phí, phù hợp với thực tiễn.' 
-                          : 'Khả năng triển khai diện rộng còn hạn chế, đòi hỏi điều kiện cơ sở vật chất nhất định.')}
-                  </div>
-
-                  <div className="italic mb-2 font-medium">3.2. Khả năng nhân rộng</div>
-                  <div className="mb-1">Có thể áp dụng:</div>
-                  <div className="space-y-1 mb-2 ml-2">
-                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 10 ? '☑' : '□'} Trong tổ chuyên môn</div>
-                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 14 ? '☑' : '□'} Trong cơ quan, đơn vị</div>
-                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 17 ? '☑' : '□'} Toàn ngành</div>
-                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 18 ? '☑' : '□'} Liên ngành</div>
-                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 19 ? '☑' : '□'} Phạm vi cấp tỉnh</div>
-                  </div>
-                  <div className="mb-2 italic">Nhận xét:</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
-                     {currentResult.phamVi?.pros && currentResult.phamVi.pros.length > 0 
-                      ? renderList(currentResult.phamVi.pros) 
-                      : (currentResult.phamVi && currentResult.phamVi.score >= 15 
-                          ? 'Sáng kiến có khả năng áp dụng và nhân rộng cao trong toàn ngành giáo dục hoặc cấp tỉnh.' 
-                          : 'Khả năng nhân rộng chủ yếu ở cấp cơ sở hoặc trong tổ chuyên môn.')}
-                  </div>
-
-                  <div className="italic mb-2 font-medium">3.3. Hạn chế trong nhân rộng</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
-                     {currentResult.phamVi?.cons && currentResult.phamVi.cons.length > 0
-                        ? renderList(currentResult.phamVi.cons)
-                        : (currentResult.phamVi && currentResult.phamVi.score >= 15
-                            ? ''
-                            : 'Cần sự đồng bộ về cơ sở vật chất và nhân lực để triển khai ở quy mô lớn hơn.')}
-                  </div>
-
-                  <div className="italic mb-1 font-medium">3.4. Điểm chấm</div>
-                  <div className="mb-4">Điểm đề xuất: <strong>{currentResult.phamVi?.score || '.............'}</strong> / 20 điểm</div>
+                  {evalToUse.giaiPhap?.pros && evalToUse.giaiPhap.pros.length > 0 && (
+                    <div className="mb-2 text-justify">
+                      <span className="font-bold italic">Nhận xét chung: </span>
+                      {renderList(evalToUse.giaiPhap.pros, "")}
+                    </div>
+                  )}
+                  {evalToUse.giaiPhap?.cons && evalToUse.giaiPhap.cons.length > 0 && (
+                    <div className="mb-2 text-justify">
+                      <span className="font-bold italic">Hạn chế: </span>
+                      {renderList(evalToUse.giaiPhap.cons, "")}
+                    </div>
+                  )}
+                  <div className="mb-4"><strong>Điểm: {evalToUse.giaiPhap?.score || 0}/30 điểm</strong></div>
                 </div>
 
-                {/* 4. Hình thức trình bày */}
+                {/* 4. Hiệu quả áp dụng */}
                 <div className="mb-6">
-                  <div className="font-bold mb-2 uppercase">4. ĐÁNH GIÁ TÍNH KHOA HỌC, HÌNH THỨC TRÌNH BÀY (Tối đa 15 điểm)</div>
-                  <div className="italic mb-2 font-medium">4.1. Hình thức trình bày</div>
-                  <div className="space-y-1 mb-2 ml-2">
-                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 8 ? '☑' : '□'} Đúng thể thức</div>
-                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 10 ? '☑' : '□'} Bố cục logic</div>
-                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 12 ? '☑' : '□'} Diễn đạt rõ ràng</div>
-                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 14 ? '☑' : '□'} Có phụ lục minh chứng</div>
-                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 13 ? '☑' : '□'} Có số liệu thống kê</div>
-                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 14 ? '☑' : '□'} Trình bày khoa học</div>
+                  <div className="font-bold mb-2 uppercase">4. Về hiệu quả áp dụng</div>
+                  <div style={{ textAlign: 'justify' }} className="mb-2 leading-relaxed">
+                    {evalToUse.hieuQua?.analysis && evalToUse.hieuQua.analysis.length > 0 
+                      ? renderList(evalToUse.hieuQua.analysis)
+                      : 'Sau quá trình triển khai, sáng kiến đã góp phần nâng cao năng lực chuyên môn của giáo viên, rèn luyện kỹ năng và sự tự tin cho học sinh.'}
                   </div>
-                  <div className="mb-2 italic">Nhận xét:</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
-                    {currentResult.tinhKhoaHoc?.hinhThuc && currentResult.tinhKhoaHoc.hinhThuc.length > 0 
-                      ? renderList(currentResult.tinhKhoaHoc.hinhThuc)
-                      : (currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 12 
-                          ? 'Báo cáo sáng kiến được trình bày đúng thể thức, bố cục logic, diễn đạt mạch lạc, rõ ràng.' 
-                          : 'Hình thức trình bày đáp ứng yêu cầu cơ bản, tuy nhiên cần chú ý thêm về tính logic của bố cục.')}
-                  </div>
-
-                  <div className="italic mb-2 font-medium">4.2. Tính khoa học</div>
-                  <div className="space-y-1 mb-2 ml-2">
-                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 8 ? '☑' : '□'} Có cơ sở lý luận</div>
-                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 10 ? '☑' : '□'} Có cơ sở thực tiễn</div>
-                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 11 ? '☑' : '□'} Có phương pháp nghiên cứu</div>
-                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 12 ? '☑' : '□'} Có quy trình thực hiện</div>
-                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 13 ? '☑' : '□'} Có đánh giá kết quả</div>
-                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score < 8 ? '☑' : '□'} Chưa thể hiện rõ tính khoa học</div>
-                  </div>
-                  <div className="mb-2 italic">Nhận xét:</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[60px] leading-relaxed">
-                     {currentResult.tinhKhoaHoc?.analysis && currentResult.tinhKhoaHoc.analysis.length > 0 
-                      ? renderList(currentResult.tinhKhoaHoc.analysis)
-                      : (currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 12 
-                          ? 'Sáng kiến có đầy đủ cơ sở lý luận, thực tiễn và phương pháp nghiên cứu chặt chẽ.' 
-                          : 'Đã xây dựng được quy trình nhưng chưa nêu bật được cơ sở khoa học một cách thuyết phục nhất.')}
-                  </div>
-
-                  <div className="italic mb-2 font-medium">4.3. Tồn tại, hạn chế</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
-                     {currentResult.tinhKhoaHoc?.cons && currentResult.tinhKhoaHoc.cons.length > 0
-                        ? renderList(currentResult.tinhKhoaHoc.cons)
-                        : (currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 12 
-                            ? ''
-                            : 'Cần trau chuốt thêm về phần đánh giá kết quả và các số liệu minh họa.')}
-                  </div>
-
-                  <div className="italic mb-1 font-medium">4.4. Điểm chấm</div>
-                  <div className="mb-4">Điểm đề xuất: <strong>{currentResult.tinhKhoaHoc?.score || '.............'}</strong> / 15 điểm</div>
+                  {evalToUse.hieuQua?.cons && evalToUse.hieuQua.cons.length > 0 && (
+                    <div className="mb-2 text-justify">
+                      <span className="font-bold italic">Hạn chế: </span>
+                      {renderList(evalToUse.hieuQua.cons, "")}
+                    </div>
+                  )}
+                  <div className="mb-4"><strong>Điểm: {evalToUse.hieuQua?.score || 0}/30 điểm</strong></div>
                 </div>
 
-                {/* 5. Minh chứng */}
+                {/* 5. Khả năng áp dụng */}
                 <div className="mb-6">
-                  <div className="font-bold mb-2 uppercase">5. ĐÁNH GIÁ MINH CHỨNG, SỐ LIỆU (Tối đa 15 điểm)</div>
-                  <div className="italic mb-2 font-medium">Nội dung đánh giá</div>
-                  <div className="space-y-1 mb-2 ml-2">
-                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 10 ? '☑' : '□'} Có minh chứng đầy đủ</div>
-                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 12 ? '☑' : '□'} Có số liệu đối chứng</div>
-                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 13 ? '☑' : '□'} Có khảo sát đầu vào – đầu ra</div>
-                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 14 ? '☑' : '□'} Có xác nhận thực tế</div>
-                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 11 ? '☑' : '□'} Có tính khách quan</div>
-                    <div>{currentResult.minhChung && currentResult.minhChung.score < 10 ? '☑' : '□'} Minh chứng chưa đầy đủ</div>
+                  <div className="font-bold mb-2 uppercase">5. Về khả năng áp dụng và phạm vi ảnh hưởng</div>
+                  <div style={{ textAlign: 'justify' }} className="mb-2 leading-relaxed">
+                    {evalToUse.khaNangApDung?.analysis && evalToUse.khaNangApDung.analysis.length > 0 
+                      ? renderList(evalToUse.khaNangApDung.analysis)
+                      : 'Sáng kiến đã được triển khai hiệu quả tại nhà trường. Các biện pháp phù hợp với điều kiện thực tế, dễ thực hiện và có khả năng áp dụng tại các đơn vị tương đồng.'}
                   </div>
-                  <div className="mb-2 italic">Nhận xét:</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[60px] leading-relaxed">
-                     {currentResult.minhChung?.analysis && currentResult.minhChung.analysis.length > 0 
-                      ? renderList(currentResult.minhChung.analysis)
-                      : (currentResult.minhChung && currentResult.minhChung.score >= 12 
-                          ? 'Minh chứng được sắp xếp hệ thống, có tính đối chứng rõ ràng và đảm bảo khách quan.' 
-                          : 'Các minh chứng đã được đính kèm nhưng cần bổ sung thêm số liệu đánh giá đầu ra chi tiết hơn.')}
-                  </div>
-                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
-                     {renderList(currentResult.minhChung?.cons, "")}
-                  </div>
-
-                  <div className="italic mb-1 font-medium">Điểm chấm</div>
-                  <div className="mb-4">Điểm đề xuất: <strong>{currentResult.minhChung?.score || '.............'}</strong> / 15 điểm</div>
+                  {evalToUse.khaNangApDung?.cons && evalToUse.khaNangApDung.cons.length > 0 && (
+                    <div className="mb-2 text-justify">
+                      <span className="font-bold italic">Hạn chế: </span>
+                      {renderList(evalToUse.khaNangApDung.cons, "")}
+                    </div>
+                  )}
+                  <div className="mb-4"><strong>Điểm: {evalToUse.khaNangApDung?.score || 0}/10 điểm</strong></div>
                 </div>
+              </div>
 
               {/* Table Scores */}
-              <h4 className="font-bold mb-2 mt-4">III. TỔNG HỢP ĐIỂM</h4>
+              <h4 className="font-bold mb-4 mt-6" style={{ fontSize: '14pt', fontWeight: 'bold' }}>II. TỔNG HỢP KẾT QUẢ CHẤM ĐIỂM</h4>
               <div className="mb-6">
                 <table className="w-full border-collapse border border-black text-xs text-left" style={{ fontSize: '14pt' }}>
                   <thead>
                     <tr className="bg-neutral-50 text-center font-bold">
-                      <th className="border border-black p-2.5 w-12 text-center" style={{ textAlign: 'center' }}>STT</th>
-                      <th className="border border-black p-2.5" style={{ textAlign: 'center' }}>Nội dung đánh giá</th>
-                      <th className="border border-black p-2.5 w-24 text-center" style={{ textAlign: 'center' }}>Điểm tối đa</th>
-                      <th className="border border-black p-2.5 w-24 text-center" style={{ textAlign: 'center' }}>Điểm chấm</th>
+                      <th className="border border-black p-2.5" style={{ padding: '8px', border: '1px solid black' }}>Nội dung đánh giá</th>
+                      <th className="border border-black p-2.5 w-32 text-center" style={{ textAlign: 'center', width: '120px', padding: '8px', border: '1px solid black' }}>Điểm tối đa</th>
+                      <th className="border border-black p-2.5 w-32 text-center" style={{ textAlign: 'center', width: '120px', padding: '8px', border: '1px solid black' }}>Điểm chấm</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>1</td>
-                      <td className="border border-black p-2.5">Tính mới, sáng tạo</td>
-                      <td className="border border-black p-2.5 text-center text-neutral-600" style={{ textAlign: 'center' }}>10đ</td>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>{currentResult.tinhMoi?.score || 0}</td>
+                      <td className="border border-black p-2.5" style={{ padding: '8px', border: '1px solid black' }}>Sự cần thiết của sáng kiến</td>
+                      <td className="border border-black p-2.5 text-center" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>10</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>{evalToUse.suCanThiet?.score || 0}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>2</td>
-                      <td className="border border-black p-2.5">Tính hiệu quả</td>
-                      <td className="border border-black p-2.5 text-center text-neutral-600" style={{ textAlign: 'center' }}>40đ</td>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>{currentResult.hieuQua?.score || 0}</td>
+                      <td className="border border-black p-2.5" style={{ padding: '8px', border: '1px solid black' }}>Tính mới, tính sáng tạo</td>
+                      <td className="border border-black p-2.5 text-center" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>20</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>{evalToUse.tinhMoi?.score || 0}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>3</td>
-                      <td className="border border-black p-2.5">Khả năng áp dụng, nhân rộng</td>
-                      <td className="border border-black p-2.5 text-center text-neutral-600" style={{ textAlign: 'center' }}>20đ</td>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>{currentResult.phamVi?.score || 0}</td>
+                      <td className="border border-black p-2.5" style={{ padding: '8px', border: '1px solid black' }}>Nội dung và giải pháp</td>
+                      <td className="border border-black p-2.5 text-center" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>30</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>{evalToUse.giaiPhap?.score || 0}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>4</td>
-                      <td className="border border-black p-2.5">Tính khoa học, hình thức trình bày</td>
-                      <td className="border border-black p-2.5 text-center text-neutral-600" style={{ textAlign: 'center' }}>15đ</td>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>{currentResult.tinhKhoaHoc?.score || 0}</td>
+                      <td className="border border-black p-2.5" style={{ padding: '8px', border: '1px solid black' }}>Hiệu quả áp dụng</td>
+                      <td className="border border-black p-2.5 text-center" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>30</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>{evalToUse.hieuQua?.score || 0}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>5</td>
-                      <td className="border border-black p-2.5">Minh chứng, số liệu</td>
-                      <td className="border border-black p-2.5 text-center text-neutral-600" style={{ textAlign: 'center' }}>15đ</td>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>{currentResult.minhChung?.score || 0}</td>
+                      <td className="border border-black p-2.5" style={{ padding: '8px', border: '1px solid black' }}>Khả năng áp dụng, phạm vi ảnh hưởng</td>
+                      <td className="border border-black p-2.5 text-center" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>10</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>{evalToUse.khaNangApDung?.score || 0}</td>
                     </tr>
-                    {currentResult.evaluationMode !== 'comment_only' && (
-                      <tr className="bg-neutral-50/50 font-bold" style={{ fontWeight: 'bold' }}>
-                        <td className="border border-black p-2.5 text-center font-bold" colSpan={2} style={{ textAlign: 'center', fontWeight: 'bold' }}><strong>TỔNG CỘNG</strong></td>
-                        <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center', fontWeight: 'bold' }}><strong>100đ</strong></td>
-                        <td className="border border-black p-2.5 text-center font-bold text-base underline text-red-900" style={{ textAlign: 'center', fontWeight: 'bold' }}><strong>{currentResult.totalScore}đ</strong></td>
-                      </tr>
-                    )}
+                    <tr className="font-bold" style={{ fontWeight: 'bold' }}>
+                      <td className="border border-black p-2.5 font-bold text-center" style={{ textAlign: 'center', fontWeight: 'bold', padding: '8px', border: '1px solid black' }}><strong>Tổng cộng</strong></td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center', fontWeight: 'bold', padding: '8px', border: '1px solid black' }}><strong>100</strong></td>
+                      <td className="border border-black p-2.5 text-center font-bold text-red-900" style={{ textAlign: 'center', fontWeight: 'bold', padding: '8px', border: '1px solid black' }}><strong>{evalToUse.totalScore}</strong></td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
 
-              {/* AI Checking Data */}
-              <div className="mb-6 p-4 border border-black text-sm" style={{ fontSize: '14pt' }}>
-                <h4 className="font-bold underline mb-3 uppercase tracking-tight text-center">PHIẾU KIỂM ĐỊNH KỸ THUẬT: ĐẠO VĂN, NỘI DUNG AI CAO & LỖI CHÍNH TẢ</h4>
-                <div className="space-y-2">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <strong>1. Tỷ lệ trùng lặp Internet (Đạo văn): </strong>
-                      <span className="font-bold text-red-700">{plagResult ? plagResult.totalDuplicatePercent : 'Không có thông tin'}%</span>
-                      <div className="text-xs text-neutral-600 italic mt-0.5">Mức cảnh báo đề xuất: {plagResult ? plagResult.warningLevel : 'Chưa phân tích'}</div>
-                      <div className="text-xs text-red-600 font-bold mt-1">Lưu ý: Quy định tỷ lệ trùng lặp không quá 30%.</div>
-                      {plagResult && plagResult.sources && plagResult.sources.length > 0 && (
-                        <div className="mt-2 text-[12px] text-gray-800">
-                           <strong className="block mb-1">Nguồn vi phạm nổi bật:</strong>
-                           <ul className="list-disc pl-4 space-y-1">
-                              {plagResult.sources.slice(0, 3).map((src, idx) => {
-                                const exactUrlOk = src.detailed_source?.exact_url && !src.detailed_source.exact_url.includes('sangkienkinhnghiem.net') && !src.detailed_source.exact_url.includes('giaoan.link');
-                                const searchUrl = src.detailed_source?.search_keywords ? `https://www.google.com/search?q=${encodeURIComponent(src.detailed_source.search_keywords)}` : null;
-                                let finalUrl = exactUrlOk ? src.detailed_source!.exact_url : searchUrl;
-                                if (exactUrlOk && src.detailed_source?.matched_snippet) {
-                                  finalUrl += `#:~:text=${encodeURIComponent(src.detailed_source.matched_snippet)}`;
-                                }
-                                
-                                const alternativeUrls = src.detailed_source?.alternative_urls || [];
-                                const allLinksForPrint = [];
-                                if (finalUrl) allLinksForPrint.push({ url: finalUrl, label: 'Nguồn chính' });
-                                alternativeUrls.forEach((url, i) => {
-                                  if (url && typeof url === 'string' && url.trim().startsWith('http')) {
-                                    allLinksForPrint.push({ url: url.trim(), label: `Minh chứng ${i + 1}` });
-                                  }
-                                });
-
-                                return (
-                                <li key={idx}>
-                                  <span className="font-semibold">{src.detailed_source?.document_title || src.name}</span> ({src.match_percent ?? src.percent}%)
-                                  {src.detailed_source?.author && !src.detailed_source.author.includes('Không xác định') && ` - Tác giả: ${src.detailed_source.author}`}
-                                  {src.detailed_source?.website_name && ` - Nguồn: ${src.detailed_source.website_name}`}
-                                  {allLinksForPrint.length > 0 ? (
-                                    <div className="mt-1 space-y-1">
-                                      {allLinksForPrint.map((lnk, i) => (
-                                        <div key={i}>
-                                          <span className="font-semibold text-blue-800">{lnk.label}:</span> <a href={lnk.url} target="_blank" rel="noreferrer" className="text-blue-600 underline break-all">{lnk.url}</a>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <><br/><span className="text-emerald-700 italic border border-emerald-200 bg-emerald-50 px-1 rounded inline-block mt-0.5">Nguồn: Kho tri thức Số ngành Giáo dục</span></>
-                                  )}
-                                  {src.detailed_source?.matched_snippet && <div className="italic text-gray-600 mt-0.5 bg-gray-50 p-1 border border-gray-200 rounded">"... {src.detailed_source.matched_snippet} ..."</div>}
-                                </li>
-                              )})}
-                           </ul>
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <strong>2. Tỷ lệ văn bản do AI sinh (Nghi ngờ): </strong>
-                      <span className="font-bold text-purple-700">{plagResult ? `${plagResult.aiGeneratedPercent || 0}%` : 'Chưa phân tích'}</span>
-                      {plagResult?.aiSegments && plagResult.aiSegments.length > 0 && (
-                        <div className="mt-2 text-[12px] text-purple-900 bg-purple-50 p-2 border border-purple-100 rounded">
-                           <strong className="block mb-1">Dấu hiệu vi phạm:</strong>
-                           <ul className="list-disc pl-4 space-y-1">
-                              {plagResult.aiSegments.slice(0, 3).map((aiText, idx) => (
-                                <li key={idx} className="italic line-clamp-2">"... {aiText} ..."</li>
-                              ))}
-                              {plagResult.aiSegments.length > 3 && (
-                                <li className="font-medium list-none italic mt-1 text-purple-700">+ {plagResult.aiSegments.length - 3} đoạn khác...</li>
-                              )}
-                           </ul>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <strong>3. Báo cáo lỗi chính tả / Ngữ pháp cơ bản: </strong>
-                    <span className="font-bold">{plagResult?.spellingErrors ? plagResult.spellingErrors.length : 0} lỗi phát hiện</span>
-                  </div>
-                  {plagResult?.spellingErrors && plagResult.spellingErrors.length > 0 && (
-                     <div className="mt-2 text-xs border border-gray-300 p-2 max-h-40 overflow-y-hidden line-clamp-3 italic text-neutral-600 bg-gray-50">
-                        {plagResult.spellingErrors.slice(0, 3).map((err, i) => (
-                           <div key={i}>- Từ sai: <span className="line-through">{err.errorText}</span> → Sửa: {err.correction} (Lý do: {err.reason})</div>
-                        ))}
-                        {plagResult.spellingErrors.length > 3 && <div>... và {plagResult.spellingErrors.length - 3} lỗi khác.</div>}
-                     </div>
-                  )}
-                  <div className="text-[11px] text-gray-500 italic text-center mt-3 border-t pt-2 border-gray-200">
-                    Kết quả phân tích này được trích xuất tự động qua trí tuệ nhân tạo.
-                  </div>
-                </div>
-              </div>
-
-              {/* Classification administrative result */}
-              <h4 className="font-bold mb-2">IV. XẾP LOẠI ĐỀ NGHỊ</h4>
-              <div className="bg-neutral-50 p-4 border border-black rounded text-sm mb-6 space-y-2">
+              {/* III. KẾT LUẬN */}
+              <h4 className="font-bold mb-4 mt-6" style={{ fontSize: '14pt', fontWeight: 'bold' }}>III. KẾT LUẬN</h4>
+              <div style={{ textAlign: 'justify', lineHeight: '1.6' }} className="space-y-3 mb-6">
                 <div>
-                  Căn cứ kết quả chấm điểm, đề nghị xếp loại: 
-                  <span className="font-bold underline uppercase ml-2 select-all text-red-900 border border-red-900 px-3 py-1 ml-3">
-                    {currentResult.classification}
-                  </span>
+                  Sáng kiến: {currentResult.initiativeTitle ? `“${currentResult.initiativeTitle}”` : '...................................................'} là sáng kiến có giá trị thực tiễn, đáp ứng yêu cầu đổi mới giáo dục mầm non, góp phần nâng cao chất lượng chuẩn bị cho trẻ trước khi vào lớp 1.
                 </div>
-              </div>
-
-              {/* Improvements */}
-              <div className="mb-8">
-                <h4 className="font-bold mb-2">V. NHẬN XÉT CHUNG VÀ KIẾN NGHỊ</h4>
-                <div className="space-y-4">
-                  <div>
-                    <strong className="block mb-1">1. Ưu điểm nổi bật:</strong>
-                    {currentResult.uuDiem && currentResult.uuDiem.length > 0 ? (
-                      <div className="space-y-1" style={{ textAlign: 'justify' }}>
-                        {currentResult.uuDiem.map((u, idx) => (
-                          <div key={idx} className="ml-4">- {u.replace(/\.$/, '')}</div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="italic text-gray-700" style={{ textAlign: 'justify' }}>Sáng kiến trình bày rõ ràng, có tính ứng dụng thực tiễn, giải quyết được một số khó khăn trong công tác chuyên môn.</div>
-                    )}
-                  </div>
-                  <div>
-                    <strong className="block mb-1">2. Tồn tại, hạn chế:</strong>
-                    {(currentResult.hanChe && currentResult.hanChe.length > 0) || (currentResult.improvements && currentResult.improvements.length > 0) ? (
-                      <div className="space-y-1" style={{ textAlign: 'justify' }}>
-                        {(currentResult.hanChe || currentResult.improvements || []).map((imp, idx) => (
-                          <div key={idx} className="ml-4">- {imp.replace(/\.$/, '')}</div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="italic text-gray-700" style={{ textAlign: 'justify' }}>Cần tiếp tục theo dõi và bổ sung minh chứng định lượng trong quá trình triển khai thực tế.</div>
-                    )}
-                  </div>
-                  <div className="pt-2">
-                    <strong className="block mb-2">3. Kiến nghị, đề xuất:</strong>
-                    <div className="flex flex-col gap-2 ml-4 mb-3">
-                      <div className="block">{currentResult.classification.includes('Không đạt') ? '□' : '☑'} Đề nghị công nhận sáng kiến</div>
-                      <div className="block">{'□'} Đề nghị chỉnh sửa, hoàn thiện</div>
-                      <div className="block">{currentResult.classification.includes('Không đạt') ? '☑' : '□'} Đề nghị không công nhận</div>
-                    </div>
-                    <div className="block mt-2">
-                      <strong className="mr-1">Ý kiến khác:</strong>&nbsp;
-                      <span className="italic text-gray-700 text-sm">Không có.</span>
-                    </div>
-                  </div>
+                <div>
+                  Hệ thống giải pháp được xây dựng tương đối đồng bộ, phù hợp với điều kiện thực tế của đơn vị, có khả năng áp dụng rộng rãi tại các cơ sở giáo dục mầm non có điều kiện tương đồng.
+                </div>
+                <div>
+                  Tuy nhiên, để nâng cao giá trị khoa học và sức thuyết phục của sáng kiến, tác giả cần bổ sung thêm số liệu định lượng, các bảng đối chứng trước và sau tác động, đồng thời tăng cường minh chứng về phạm vi ảnh hưởng và khả năng nhân rộng.
+                </div>
+                <div className="pt-2 font-bold uppercase" style={{ fontWeight: 'bold' }}>
+                  Xếp loại đề nghị: {evalToUse.classification || 'LOẠI KHÁ'}
+                </div>
+                <div className="font-bold" style={{ fontWeight: 'bold' }}>
+                  Tổng điểm: {evalToUse.totalScore}/100 điểm
                 </div>
               </div>
 
               {/* Signatures */}
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '3rem', border: 'none' }} border={0}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '2.5rem', border: 'none' }} border={0}>
                 <tbody>
                   <tr style={{ border: 'none' }}>
-                    <td style={{ width: '50%', border: 'none' }}></td>
-                    <td style={{ width: '50%', textAlign: 'center', verticalAlign: 'top', fontSize: '14pt', border: 'none' }}>
-                      <strong style={{ display: 'block' }}>NGƯỜI NHẬN XÉT, ĐÁNH GIÁ</strong>
-                      <div style={{ fontSize: '14pt', fontStyle: 'italic', marginBottom: '80px' }}>(Ký và ghi rõ họ tên)</div>
-                      <div style={{ fontWeight: 'bold' }}>{reviewerName || '........................................'}</div>
+                    <td style={{ width: '45%', border: 'none' }}></td>
+                    <td style={{ width: '55%', textAlign: 'center', verticalAlign: 'top', fontSize: '14pt', border: 'none' }}>
+                      <div style={{ fontStyle: 'italic', fontSize: '14pt', marginBottom: '4px' }}>
+                        Hàm Yên, ngày {new Date(evalToUse.evaluatedAt || currentResult.evaluatedAt).getDate()} tháng {new Date(evalToUse.evaluatedAt || currentResult.evaluatedAt).getMonth() + 1} năm {new Date(evalToUse.evaluatedAt || currentResult.evaluatedAt).getFullYear()}
+                      </div>
+                      {isCouncilTarget ? (
+                        <>
+                          <strong style={{ display: 'block', fontSize: '14pt', fontWeight: 'bold' }}>TM. HỘI ĐỒNG THẨM ĐỊNH SÁNG KIẾN</strong>
+                          <div style={{ fontSize: '14pt', fontStyle: 'italic', marginBottom: '80px' }}>(Ký, ghi rõ họ và tên)</div>
+                          <div style={{ fontWeight: 'bold' }}>ỦY VIÊN THƯ KÝ HỘI ĐỒNG</div>
+                        </>
+                      ) : (
+                        <>
+                          <strong style={{ display: 'block', fontSize: '14pt', fontWeight: 'bold' }}>NGƯỜI NHẬN XÉT, ĐÁNH GIÁ</strong>
+                          <div style={{ fontSize: '14pt', fontStyle: 'italic', marginBottom: '80px' }}>(Ký, ghi rõ họ và tên)</div>
+                          <div style={{ fontWeight: 'bold' }}>{reviewerName || '........................................'}</div>
+                        </>
+                      )}
                     </td>
                   </tr>
                 </tbody>
               </table>
-
-            </div>
 
             </div>
 
@@ -3213,7 +4354,8 @@ export default function App() {
 
           </div>
         </div>
-      )}
+      );
+    })()}
 
     </div>
   );

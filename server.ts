@@ -81,7 +81,21 @@ app.get('/api/health', (req, res) => {
 
 /// 2. API: Evaluate SKKN
 app.post('/api/evaluate', async (req, res) => {
-  const { apiKeys, model, teacher, initiativeTitle, appliedDate, initiativeText, fileBase64, fileName, pronoun = 'thay_co', evaluationMode = 'full' } = req.body;
+  const { 
+    apiKeys, 
+    model, 
+    teacher, 
+    initiativeTitle, 
+    appliedDate, 
+    initiativeText, 
+    fileBase64, 
+    fileName, 
+    pronoun = 'thay_co', 
+    evaluationMode = 'full',
+    requestedScore,
+    reEvaluationNotes,
+    evaluateTarget = 'department'
+  } = req.body;
   const targetModel = model || 'gemini-3.1-flash-lite';
 
   if (!initiativeTitle && !initiativeText && !fileBase64) {
@@ -100,29 +114,67 @@ app.post('/api/evaluate', async (req, res) => {
       pronounInstruction = `- BẮT BUỘC tất cả các câu nhận xét chi tiết, điểm mạnh, hạn chế, phân tích và đề xuất cải thiện dành cho tác giả đều phải bắt đầu bằng đại từ xưng hô là "Tác giả" (Ví dụ: "Tác giả đã thể hiện rõ...", "Tác giả cần bổ sung thêm...", "Tác giả nên thiết kế..."). Tuyệt đối không dùng từ xưng hô khác ở đầu câu.`;
     }
 
-    const systemInstruction = `Ý THỨC VAI TRÒ & NGỮ CẢNH CẤP XÃ:
-Bạn là Giám khảo thuộc Hội đồng Sáng kiến xã Hàm Yên, tỉnh Tuyên Quang. Nhiệm vụ của bạn là thẩm định và viết lời nhận xét chuyên môn CHI TIẾT, KHOA HỌC (PHIẾU NHẬN XÉT, ĐÁNH GIÁ SÁNG KIẾN) cho Báo cáo Sáng kiến kinh nghiệm (SKKN) giáo dục cấp cơ sở. ĐẶC BIỆT LƯU Ý, TRONG ĐÁNH GIÁ PHẢI BÁM SÁT TIÊU CHUẨN CÔNG NHẬN SÁNG KIẾN THEO NGHỊ ĐỊNH SỐ 13/2012/NĐ-CP.
+    let scoreRequirementInstruction = "";
+    if (requestedScore !== undefined && requestedScore !== null && requestedScore !== '') {
+      const scoreNum = Number(requestedScore);
+      if (!isNaN(scoreNum) && scoreNum >= 0 && scoreNum <= 100) {
+        scoreRequirementInstruction = `
+[YÊU CẦU ĐẶC BIỆT BẮT BUỘC VỀ ĐIỂM SỐ]:
+- Người sử dụng yêu cầu tổng điểm thẩm định mong muốn của Sáng kiến này là đúng: **${scoreNum} ĐIỂM**.
+- Bạn BẮT BUỘC phải phân bổ điểm số cho các tiêu chí thành phần trong kết quả trả về sao cho TỔNG CỦA CHÚNG (suCanThiet.score + tinhMoi.score + giaiPhap.score + hieuQua.score + khaNangApDung.score) CỘNG LẠI BẰNG ĐÚNG ${scoreNum} ĐIỂM.
+- Khung điểm thành phần tối đa quy định:
+  + suCanThiet.score: tối đa 10 điểm.
+  + tinhMoi.score: tối đa 20 điểm.
+  + giaiPhap.score: tối đa 30 điểm.
+  + hieuQua.score: tối đa 30 điểm.
+  + khaNangApDung.score: tối đa 10 điểm.
+- Hãy lập luận, phân tích ưu điểm, hạn chế của từng tiêu chí sao cho hợp lý, thuyết phục và tương thích chính xác với mức điểm thành phần mà bạn đã chia để có tổng điểm là ${scoreNum} điểm.`;
+      }
+    }
 
-QUY ĐỊNH BAREM ĐÁNH GIÁ (Thang điểm 100):
-Phân tích và nhận xét văn bản dựa trên các tiêu chí để đưa ra điểm số phù hợp (khắt khe, hiếm khi cho điểm tuyệt đối), phải tham chiếu các điều kiện của Nghị định 13/2012/NĐ-CP:
-1. Tính cấp thiết (Không chấm điểm, chỉ nhận xét): Sự cần thiết của đề tài. Nhận diện vấn đề thực tiễn.
-2. Tính mới, sáng tạo (10 điểm - Tương ứng Khoản 1 Điều 4, Nghị định 13/2012/NĐ-CP): Điểm mới, sự khác biệt. Không trùng lặp, chưa bị bộc lộ công khai, chưa từng được áp dụng bởi người khác. Trừ điểm nếu chỉ lập lại các giải pháp cũ hoặc chỉ là thực hiện chức năng nhiệm vụ thông thường. (Mức điểm phổ biến: 7-9)
-3. Tính khoa học, hình thức (15 điểm): Trình bày logic, đúng thể thức, có cơ sở lý luận và thực tiễn, diễn đạt rõ ràng. (Mức điểm phổ biến: 10-13)
-4. Minh chứng, số liệu (15 điểm): Đánh giá minh chứng rõ ràng, sự đầy đủ của khảo sát đầu vào - đầu ra, số liệu đối chứng, và tính khách quan. Trừ điểm nếu chỉ nhận xét định tính mà không có số liệu cụ thể. (Mức điểm phổ biến: 10-13)
-5. Tính hiệu quả áp dụng (40 điểm - Tương ứng Khoản 2 Điều 4, Nghị định 13/2012/NĐ-CP): Hiệu quả thực tiễn chuyên môn, hiệu quả kinh tế hoặc xã hội. Trừ nghiêm khắc nếu hiệu quả không rõ rệt. (Mức điểm phổ biến: 32-36)
-6. Khả năng áp dụng, nhân rộng (20 điểm): Phạm vi lan tỏa, tính khả thi áp dụng thực tiễn trong ngành học, liên ngành, hoặc quy mô lớn hơn (trường, tỉnh). (Mức điểm phổ biến: 15-18)
+    let notesRequirementInstruction = "";
+    if (reEvaluationNotes && String(reEvaluationNotes).trim().length > 0) {
+      notesRequirementInstruction = `
+[YÊU CẦU ĐẶC BIỆT CỦA NGƯỜI THẨM ĐỊNH / CHÚ Ý CỦA NGƯỜI DÙNG]:
+- Tác giả hoặc Giám khảo yêu cầu lưu ý đặc biệt sau khi thẩm định lại:
+  "${String(reEvaluationNotes).trim()}"
+- Hãy bám sát yêu cầu trên để viết lời nhận xét chi tiết, phân tích sâu và điều chỉnh nội dung đánh giá cho phù hợp nhất.`;
+    }
+
+    const systemInstructionRole = evaluateTarget === 'council' 
+      ? `Ý THỨC VAI TRÒ & NGỮ CẢNH CẤP XÃ:
+Bạn là Hội đồng Thẩm định Sáng kiến xã Hàm Yên, tỉnh Tuyên Quang. Nhiệm vụ của bạn là đưa ra nhận xét, đánh giá ĐỘC LẬP và KHÁCH QUAN với tư cách là tập thể Hội đồng đối với Báo cáo Sáng kiến kinh nghiệm (SKKN). ĐẶC BIỆT LƯU Ý, TRONG ĐÁNH GIÁ PHẢI BÁM SÁT TIÊU CHUẨN CÔNG NHẬN SÁNG KIẾN THEO NGHỊ ĐỊNH SỐ 13/2012/NĐ-CP.
+
+QUY ĐỊNH BẮT BUỘC ĐỂ KHÁCH QUAN, TRÁNH TRÙNG LẶP VÀ RẬP KHUÔN:
+- Nhận xét của bạn là đại diện cho góc nhìn của toàn thể Hội đồng Thẩm định, phải ĐỘC LẬP, SẮC SẢO, và khác biệt với phòng chuyên môn sơ bộ (phòng Văn hóa - Xã hội).
+- Tập trung đánh giá mạnh mẽ vào hiệu quả thực tế ở trường học, khả năng áp dụng và nhân rộng ra toàn địa bàn, tính phù hợp với thực tiễn giảng dạy hiện nay.
+- Đưa ra những điểm góp ý, phản biện sắc sảo, khen chê rõ ràng, mang tính định hướng chuyên môn cao.
+- Không được dùng lại các từ ngữ hay câu văn rập khuôn. Hãy nhận xét đa dạng, phong phú hơn. Mức điểm có thể chênh lệch nhẹ so với phòng sơ bộ để đảm bảo tính khách quan đánh giá phản biện.`
+      : `Ý THỨC VAI TRÒ & NGỮ CẢNH CẤP XÃ:
+Bạn là Giám khảo đại diện cho Phòng Văn hóa - Xã hội xã Hàm Yên, tỉnh Tuyên Quang. Nhiệm vụ của bạn là thẩm định sơ bộ và viết lời nhận xét chuyên môn CHI TIẾT, KHOA HỌC cho Báo cáo Sáng kiến kinh nghiệm (SKKN) giáo dục cấp cơ sở. ĐẶC BIỆT LƯU Ý, TRONG ĐÁNH GIÁ PHẢI BÁM SÁT TIÊU CHUẨN CÔNG NHẬN SÁNG KIẾN THEO NGHỊ ĐỊNH SỐ 13/2012/NĐ-CP.`;
+
+    const systemInstruction = `${systemInstructionRole}
+
+QUY ĐỊNH BAREM ĐÁNH GIÁ MỚI (Thang điểm 100):
+Phân tích và nhận xét văn bản dựa trên 5 tiêu chí để đưa ra điểm số phù hợp (khắt khe, hiếm khi cho điểm tuyệt đối):
+1. Về sự cần thiết của sáng kiến (Tối đa 10 điểm): Sự cần thiết, lý do lựa chọn nghiên cứu phát xuất từ thực tiễn. Đánh giá tính cấp thiết, sự phù hợp với đổi mới giáo dục. (Mức điểm phổ biến: 8 - 9.5)
+2. Về tính mới, tính sáng tạo của sáng kiến (Tối đa 20 điểm - Tương ứng Khoản 1 Điều 4, Nghị định 13/2012/NĐ-CP): Thể hiện rõ điểm mới của sáng kiến là gì (cải tiến phương pháp, quy trình, tổ chức, ứng dụng công nghệ...). Có tính mới trong phạm vi cơ sở, đổi mới rõ nét. (Mức điểm phổ biến: 14 - 18)
+3. Về nội dung và chất lượng các giải pháp (Tối đa 30 điểm): Mô tả chi tiết các giải pháp/biện pháp (biện pháp 1, biện pháp 2...). Đánh giá tính logic, đồng bộ và phù hợp của hệ thống biện pháp. Chỉ rõ ưu điểm và những điểm hạn chế (như mang tính mô tả, chưa lượng hóa tiêu chí...). (Mức điểm phổ biến: 23 - 27)
+4. Về hiệu quả áp dụng (Tối đa 30 điểm - Tương ứng Khoản 2 Điều 4, Nghị định 13/2012/NĐ-CP): Hiệu quả đối với từng đối tượng: Đối với giáo viên, Đối với trẻ/học sinh, Đối với phụ huynh, Đối với nhà trường/đơn vị. Chỉ ra hạn chế nếu có (ví dụ số liệu còn định tính, thiếu so sánh định lượng...). (Mức điểm phổ biến: 22 - 26)
+5. Về khả năng áp dụng và phạm vi ảnh hưởng (Tối đa 10 điểm): Triển khai ở tổ chuyên môn, số lượng lớp học áp dụng, dễ thực hiện, ít tốn kinh phí, khả năng nhân rộng ngoài đơn vị. Chỉ ra hạn chế (ví dụ chưa có minh chứng áp dụng rộng rãi ngoài phạm vi đơn vị). (Mức điểm phổ biến: 7 - 9)
 
 QUY ĐỊNH BẮT BUỘC VỀ VĂN PHONG NHẬN XÉT:
-- BẮT BUỘC: ĐỂ TRÁNH DÀI DÒNG KHI XUẤT RA WORD, các mảng nhận xét (analysis, pros, cons, comparison, hinhThuc...) BẮT BUỘC PHẢI TÁCH Ý NHỎ. Tức là mỗi ý tưởng / mỗi câu nhận xét nên là 1 phần tử riêng biệt trong Array. KHÔNG viết một đoạn văn dài gộp nhiều câu và nhiều dấu chấm (.) vào 1 phần tử Array duy nhất. Hãy chia nhỏ ra để xuống dòng hợp lý.
+- BẮT BUỘC: ĐỂ TRÁNH DÀI DÒNG KHI XUẤT RA WORD/PDF, các mảng nhận xét (analysis, pros, cons) BẮT BUỘC PHẢI TÁCH Ý NHỎ. Tức là mỗi ý tưởng / mỗi câu nhận xét nên là 1 phần tử riêng biệt trong Array. KHÔNG viết một đoạn văn dài gộp nhiều câu và nhiều dấu chấm (.) vào 1 phần tử Array duy nhất. Hãy chia nhỏ ra để xuống dòng hợp lý.
 - KHÔNG tự ý thêm ký tự "- " ở đầu nội dung của mỗi phần tử, chỉ cần ngắt ý và trả về mảng chuỗi.
-- Văn phong đánh giá phải mang tính sư phạm, pháp lý (có dẫn chứng tiêu chuẩn NĐ 13/2012/NĐ-CP khi phù hợp), lập luận khách quan, khoa học, chỉ ra rõ ràng cả ƯU ĐIỂM và HẠN CHẾ.
-- Khắt khe hơn trong đánh giá, không chấm điểm quá cao (hướng tới mức 82-88 điểm thay vì 90+ điểm với các SKKN bình thường). Với các SKKN thiếu bảng biểu số liệu định lượng, tổng điểm chỉ nên dao động từ 85 - 87 điểm.
+- Văn phong đánh giá phải mang tính sư phạm, pháp lý (có dẫn chứng tiêu chuẩn NĐ 13/2012/NĐ-CP khi phù hợp), lập luận khách quan, khoa học, chỉ ra rõ ràng cả ƯU ĐIỂM và HẠN CHẾ ở từng tiêu chí.
+- Khắt khe trong đánh giá, không chấm điểm quá cao (hướng tới mức 80-87 điểm với các SKKN bình thường).
 - KHÔNG nói chung chung, phải phân tích sâu vào nội dung và biện pháp cụ thể của sáng kiến.
-- Đảm bảo có mục nhận xét hạn chế và đề xuất khắc phục cụ thể.
 - Việc tính tổng điểm tự tính dựa trên tổng các điểm thành phần.
 ${pronounInstruction}
+${scoreRequirementInstruction}
+${notesRequirementInstruction}
 
-Hãy phân tích toàn văn Báo cáo Sáng kiến và trả về cấu trúc JSON đúng theo Schema gồm các tiêu chí trên.`;
+Hãy phân tích toàn văn Báo cáo Sáng kiến và trả về cấu trúc JSON đúng theo Schema gồm 5 tiêu chí trên.`;
 
     const modelPrompt = `Dưới đây là thông tin và báo cáo sáng kiến cần thẩm định:
 Họ tên giáo viên: ${teacher?.teacherName || 'Chưa rõ'}
@@ -167,87 +219,64 @@ ${initiativeText}
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              tinhCapThiet: {
+              suCanThiet: {
                 type: Type.OBJECT,
                 properties: {
-                  levelName: { type: Type.STRING, description: "Đánh giá ngắn (Ví dụ: Đạt yêu cầu, có tính thực tiễn cao.)" },
-                  analysis: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Nhận xét chi tiết về tính cấp thiết." }
+                  score: { type: Type.INTEGER, description: "Điểm (0-10)" },
+                  levelName: { type: Type.STRING, description: "Đánh giá mức độ, ví dụ: Rất cần thiết, Phù hợp" },
+                  analysis: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Nhận xét chi tiết sự cần thiết (tách thành các ý nhỏ)" },
+                  pros: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Đánh giá chung về sự cần thiết (ví dụ: - Xác định đúng vấn đề, - Phù hợp chủ trương...)" }
                 },
-                required: ['levelName', 'analysis']
+                required: ['score', 'levelName', 'analysis', 'pros']
               },
               tinhMoi: {
                 type: Type.OBJECT,
                 properties: {
-                  score: { type: Type.INTEGER, description: "Điểm (0-10)" },
-                  levelName: { type: Type.STRING, description: "Đánh giá ngắn (Ví dụ: Có tính cải tiến và vận dụng...)" },
-                  analysis: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Nhận xét chi tiết về tính mới." },
-                  pros: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Ưu điểm về tính mới, tính sáng tạo" },
-                  cons: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Hạn chế về tính mới, tính sáng tạo" },
-                  comparison: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Nhận xét so sánh với các giải pháp thông thường trước đây" }
+                  score: { type: Type.INTEGER, description: "Điểm (0-20)" },
+                  levelName: { type: Type.STRING, description: "Đánh giá mức độ" },
+                  analysis: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Nhận xét chi tiết tính mới (tách thành các ý nhỏ)" },
+                  pros: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Điểm mới của sáng kiến thể hiện ở việc (các gạch đầu dòng)" },
+                  cons: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Hạn chế về tính mới nếu có" }
                 },
-                required: ['score', 'levelName', 'analysis']
+                required: ['score', 'levelName', 'analysis', 'pros', 'cons']
               },
-              tinhKhoaHoc: {
+              giaiPhap: {
                 type: Type.OBJECT,
                 properties: {
-                  score: { type: Type.INTEGER, description: "Điểm (0-15)" },
-                  levelName: { type: Type.STRING, description: "Đánh giá ngắn" },
-                  analysis: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Nhận xét chi tiết tính khoa học." },
-                  hinhThuc: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Nhận xét chi tiết về hình thức trình bày (Đúng thể thức, bố cục, diễn đạt...)" },
-                  pros: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Ưu điểm về khoa học và hình thức" },
-                  cons: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Hạn chế về khoa học và hình thức" }
+                  score: { type: Type.INTEGER, description: "Điểm (0-30)" },
+                  levelName: { type: Type.STRING, description: "Đánh giá mức độ" },
+                  analysis: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Nhận xét chất lượng giải pháp, nêu tên và ý chính Biện pháp 1, Biện pháp 2... trong báo cáo" },
+                  pros: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Nhận xét chung về tính đồng bộ, logic của hệ thống biện pháp" },
+                  cons: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Hạn chế về nội dung và chất lượng các giải pháp" }
                 },
-                required: ['score', 'levelName', 'analysis']
-              },
-              minhChung: {
-                type: Type.OBJECT,
-                properties: {
-                  score: { type: Type.INTEGER, description: "Điểm (0-15)" },
-                  levelName: { type: Type.STRING, description: "Đánh giá ngắn" },
-                  analysis: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Nhận xét chi tiết về minh chứng, số liệu." },
-                  pros: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Ưu điểm về minh chứng, số liệu" },
-                  cons: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Hạn chế về minh chứng, số liệu" }
-                },
-                required: ['score', 'levelName', 'analysis']
+                required: ['score', 'levelName', 'analysis', 'pros', 'cons']
               },
               hieuQua: {
                 type: Type.OBJECT,
                 properties: {
-                  score: { type: Type.INTEGER, description: "Điểm (0-40)" },
-                  levelName: { type: Type.STRING, description: "Đánh giá ngắn" },
-                  analysis: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Phân tích cực kỳ chi tiết các kết quả đạt được." },
-                  pros: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Ưu điểm về hiệu quả áp dụng" },
-                  cons: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Hạn chế về hiệu quả áp dụng" }
+                  score: { type: Type.INTEGER, description: "Điểm (0-30)" },
+                  levelName: { type: Type.STRING, description: "Đánh giá mức độ" },
+                  analysis: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Nhận xét chi tiết hiệu quả áp dụng, ghi rõ các mục cụ thể: 'Đối với giáo viên:', 'Đối với trẻ/học sinh:', 'Đối với phụ huynh:', 'Đối với nhà trường/đơn vị:' kèm theo ý nhận xét cho mỗi mục." },
+                  cons: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Hạn chế về hiệu quả áp dụng (ví dụ: Số liệu còn mang tính định tính, chưa có đối chứng...)" }
                 },
-                required: ['score', 'levelName', 'analysis']
+                required: ['score', 'levelName', 'analysis', 'cons']
               },
-              phamVi: {
+              khaNangApDung: {
                 type: Type.OBJECT,
                 properties: {
-                  score: { type: Type.INTEGER, description: "Điểm (0-20)" },
-                  levelName: { type: Type.STRING, description: "Đánh giá ngắn" },
-                  analysis: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Phân tích khả năng nhân rộng." },
-                  pros: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Ưu điểm về phạm vi ảnh hưởng" },
-                  cons: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Hạn chế về phạm vi ảnh hưởng" }
+                  score: { type: Type.INTEGER, description: "Điểm (0-10)" },
+                  levelName: { type: Type.STRING, description: "Đánh giá mức độ" },
+                  analysis: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Nhận xét khả năng áp dụng và phạm vi ảnh hưởng (các lớp học áp dụng, kinh phí, tính khả thi)" },
+                  cons: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Hạn chế về khả năng áp dụng và nhân rộng ngoài đơn vị" }
                 },
-                required: ['score', 'levelName', 'analysis']
-              },
-              uuDiem: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-                description: "Các ý ưu điểm tổng thể (II. Ưu điểm)"
-              },
-              hanChe: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-                description: "Các ý tồn tại, hạn chế (III. Tồn tại, hạn chế)"
+                required: ['score', 'levelName', 'analysis', 'cons']
               },
               summary: {
                 type: Type.STRING,
-                description: "Đánh giá chung (IV. Đánh giá chung)"
+                description: "III. KẾT LUẬN tổng quan (Nhận định chung, ưu điểm lớn nhất, những điểm cần bổ sung định lượng để nâng cao giá trị khoa học...)"
               }
             },
-            required: ['tinhCapThiet', 'tinhMoi', 'tinhKhoaHoc', 'minhChung', 'hieuQua', 'phamVi', 'uuDiem', 'hanChe', 'summary']
+            required: ['suCanThiet', 'tinhMoi', 'giaiPhap', 'hieuQua', 'khaNangApDung', 'summary']
           }
         }
       });
@@ -311,7 +340,9 @@ Lưu ý quan trọng: Tên tác giả (người viết), chức vụ, đơn vị
               extractedStage: { type: Type.STRING, description: "Cấp học (ví dụ: Mầm non, Tiểu học, THCS, THPT). Suy luận từ tên trường nếu có." },
               extractedSubject: { type: Type.STRING, description: "Tên hệ học, môn học hoặc chuyên ngành." },
               extractedRole: { type: Type.STRING, description: "Chức vụ (vd: Giáo viên, Hiệu phó) hoặc nhiệm vụ giảng dạy." },
-              extractedBirthYear: { type: Type.STRING, description: "Năm sinh tác giả (nếu có)." }
+              extractedBirthYear: { type: Type.STRING, description: "Năm sinh tác giả (nếu có)." },
+              extractedPhone: { type: Type.STRING, description: "Số điện thoại liên hệ của tác giả nếu có (nếu không thấy thì trả về rỗng)." },
+              extractedEmail: { type: Type.STRING, description: "Email liên hệ của tác giả nếu có (nếu không thấy thì trả về rỗng)." }
             }
           }
         }
@@ -377,6 +408,8 @@ Bắt buộc trả về đúng định dạng JSON có cấu trúc sau:
   "extractedSubject": "...",
   "extractedRole": "...",
   "extractedBirthYear": "...",
+  "extractedPhone": "...",
+  "extractedEmail": "...",
   "sources": [{
     "id": "src1", 
     "name": "Giáo án Hoạt động trải nghiệm...", 
@@ -457,6 +490,8 @@ ${text}
   "extractedSubject": "...",
   "extractedRole": "...",
   "extractedBirthYear": "...",
+  "extractedPhone": "...",
+  "extractedEmail": "...",
   "sources": [{
     "id": "src1", 
     "name": "Giáo án Hoạt động trải nghiệm hướng nghiệp 8...", 

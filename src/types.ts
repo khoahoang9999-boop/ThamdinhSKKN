@@ -10,6 +10,8 @@ export interface TeacherInfo {
   schoolName: string;
   stage: 'Mầm non' | 'Tiểu học' | 'THCS' | 'Khác';
   subject: string;
+  phone?: string;
+  email?: string;
 }
 
 export interface InitiativeInput {
@@ -22,11 +24,28 @@ export interface InitiativeInput {
 export interface CriterionResult {
   score: number;
   levelName: string; // e.g. Rất tốt, Tốt, Khá, v.v.
-  pros?: string[];    // Positive points (legacy)
-  cons?: string[];    // Weaknesses / critiques (legacy)
-  analysis: string[]; // Detailed analysis
-  comparison?: string[]; // Added: So sánh với giải pháp thông thường
-  hinhThuc?: string[];   // Added: Tính hình thức
+  analysis: string[]; // Detailed analysis / Nhận xét chi tiết
+  pros?: string[];    // Đánh giá / Điểm mới thể hiện ở (gạch đầu dòng)
+  cons?: string[];    // Hạn chế / Tồn tại
+}
+
+export interface CouncilMember {
+  id: string;
+  name: string;
+  unit: string;
+  role: string;
+}
+
+export interface CouncilEvaluationResult {
+  suCanThiet: CriterionResult;
+  tinhMoi: CriterionResult;
+  giaiPhap: CriterionResult;
+  hieuQua: CriterionResult;
+  khaNangApDung: CriterionResult;
+  summary: string;
+  totalScore: number;
+  classification: string;
+  evaluatedAt: string;
 }
 
 export interface EvaluationResult {
@@ -37,30 +56,35 @@ export interface EvaluationResult {
   initiativeText: string;
   evaluatedAt: string;
   
-  // V2 format
-  tinhCapThiet?: {
-    analysis: string[];
-    levelName: string;
-  };
-  tinhMoi?: CriterionResult;
-  tinhKhoaHoc?: CriterionResult;
-  minhChung?: CriterionResult;
-  uuDiem?: string[];
-  hanChe?: string[];
+  // 5 New criteria structures
+  suCanThiet: CriterionResult;    // 1. Sự cần thiết (tối đa 10đ)
+  tinhMoi: CriterionResult;       // 2. Tính mới, tính sáng tạo (tối đa 20đ)
+  giaiPhap: CriterionResult;      // 3. Nội dung và giải pháp (tối đa 30đ)
+  hieuQua: CriterionResult;       // 4. Hiệu quả áp dụng (tối đa 30đ)
+  khaNangApDung: CriterionResult;  // 5. Khả năng áp dụng, phạm vi ảnh hưởng (tối đa 10đ)
 
-  // Common/Legacy
-  hieuQua: CriterionResult;
-  phamVi: CriterionResult;
-  
-  improvements?: string[]; // (legacy)
-  summary: string;       // Dynamic summary / IV. Đánh giá chung
-  
+  summary: string;       // Kết luận chung / III. KẾT LUẬN
   totalScore: number;
   classification: string;
   pronoun?: 'thay_co' | 'tac_gia';
   evaluationMode?: 'full' | 'comment_only';
   isCouncilAppraisal?: boolean;
   plagiarismResult?: PlagiarismResult | null;
+  uuDiem?: string[];
+  hanChe?: string[];
+  improvements?: string[];
+  councilName?: string;
+  member1Name?: string;
+  member1Unit?: string;
+  member1Role?: string;
+  member2Name?: string;
+  member2Unit?: string;
+  member2Role?: string;
+  member3Name?: string;
+  member3Unit?: string;
+  member3Role?: string;
+  councilMembers?: CouncilMember[];
+  councilResult?: CouncilEvaluationResult;
 }
 
 export interface DetailedSource {
