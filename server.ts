@@ -345,23 +345,25 @@ app.post('/api/plagiarism-check', async (req, res) => {
   }
 
   try {
-    const systemInstruction = `Bạn là Trợ lý số Quét và Kiểm tra Trùng lặp Sáng kiến Kinh nghiệm thuộc Hội đồng Sáng kiến xã Hàm Yên, Tuyên Quang.
-Nhiệm vụ của bạn là:
-1. Rà soát trùng lặp, đạo văn.
-2. Kiểm tra lỗi chính tả trong văn bản (bỏ qua các lỗi đặc thù theo chuyên môn, thuật ngữ chuyên ngành).
-3. Đánh giá tỷ lệ nội dung do AI tạo ra (AI-generated content).
+    const systemInstruction = `Ý THỨC VAI TRÒ:
+Bạn là module Thẩm định Kỹ thuật và Ngôn ngữ học cao cấp thuộc Hội đồng Sáng kiến xã Hàm Yên, tỉnh Tuyên Quang. Nhiệm vụ của bạn là rà soát toàn bộ văn bản Báo cáo Sáng kiến kinh nghiệm (SKKN) dưới đây để rà soát đạo văn, phát hiện dấu hiệu can thiệp của AI và bắt lỗi chính tả.
 
-HƯỚNG DẪN HOẠT ĐỘNG:
-1. Tách văn bản thành chuỗi phân đoạn liên tục.
-2. Rà soát từng phân đoạn trùng lặp, bỏ qua lý luận chung. Đánh dấu isDuplicate: true nếu có trùng lặp.
-3. CHỈ ĐÁNH DẤU LÀ ĐẠO VĂN (isDuplicate: true) NẾU PHÁT HIỆN MỘT ĐOẠN VĂN RẤT DÀI (khoảng 5 dòng trở lên, hoặc tương đương trên 70-80 từ liên tục) ĐƯỢC SAO CHÉP Y HỆT từ một tài liệu cụ thể. BỎ QUA HOÀN TOÀN (KHÔNG ĐÁNH DẤU LÀ ĐẠO VĂN) ĐỐI VỚI CÁC ĐOẠN NGẮN HƠN 5 DÒNG. BỎ QUA HOÀN TOÀN các câu định nghĩa, lý luận chung chung, các câu tiêu đề, mục tiêu giáo dục, tên đề tài, các cụm từ chuyên môn sư phạm quen thuộc. Các câu văn mang tính chất liệt kê mục tiêu phát triển của trẻ em KHÔNG PHẢI LÀ ĐẠO VĂN. NẾU KHÔNG NHỚ RA HOẶC TÌM ĐƯỢC "TÊN TÀI LIỆU", THÌ TUYỆT ĐỐI KHÔNG ĐƯỢC ĐÁNH DẤU LÀ ĐẠO VĂN.
-4. TRÍCH XUẤT THÔNG TIN NGUỒN NGHIÊM NGẶT: Bạn hãy dùng kiến thức đã học để đối chiếu nguồn gốc của đoạn văn (hoặc đưa ra gợi ý sát nhất). YÊU CẦU TRÍCH XUẤT NHƯ SAU:
-   - KHÔNG được trả về trang chủ chung chung (Ví dụ: Không được ghi thuvienhoclieu.com hay violet.vn).
-   - BẮT BUỘC phải cố gắng đưa ra Tiêu đề cụ thể của chính bài viết, file giáo án hoặc tài liệu chứa đoạn văn đó (Ví dụ: "Sáng kiến kinh nghiệm môn Khoa học tự nhiên 8 - Phân môn Vật lý").
-   - Nếu bạn biết được đường link trực tiếp (URL cụ thể) dẫn đến bài viết hoặc file đính kèm đó thì cung cấp. Nếu không chắc chắn, BẠN CÓ THỂ ĐỂ TRỐNG ĐƯỜNG LINK VÀ HỆ THỐNG SẼ TỰ HIỂN THỊ NGUỒN MINH CHỨNG TỪ KHO TRI THỨC. Tuy nhiên vẫn bị tính là đạo văn miễn là bạn cung cấp được Tiêu đề tài liệu ở trên.
-5. Kiểm tra lỗi chính tả: Ghi nhận các lỗi ngữ pháp, lỗi đánh máy rõ ràng. KHÔNG tính các từ ngữ chuyên môn (ví dụ trong Tin học, Toán học...).
-6. Phát hiện AI CHUYÊN SÂU: Quét và phân tích kỹ lưỡng từng câu văn để phát hiện các dấu hiệu sinh tự động (AI-generated). Nhận diện các đoạn văn có cấu trúc khuôn mẫu, sáo rỗng, lặp ý, sử dụng từ ngữ đao to búa lớn đặc trưng của AI (ChatGPT, Gemini, Claude...). Ước lượng tỷ lệ % nội dung được viết bởi AI một cách khắt khe. Nếu đoạn nào bị nghi ngờ cao do AI viết, trích xuất chính xác vào mảng \`aiSegments\`.
-7. Đánh giá Mức cảnh báo (warningLevel): Đánh giá mức độ vi phạm dựa trên tỷ lệ trùng lặp. Lưu ý quy định: Tỷ lệ trùng lặp không được vượt quá 30%. Nếu tổng tỷ lệ trùng lặp > 30%, ghi "Vi phạm quy định (trên 30%)". Nếu <= 30%, ghi "Đạt yêu cầu (dưới 30%)".
+NỘI DUNG NHIỆM VỤ Chuyên sâu:
+
+1. PHÁT HIỆN VĂN BẢN DO AI SOẠN THẢO (AI ĐỘC QUYỀN TRÍ TUỆ):
+- Hãy quét cấu trúc câu, phân tích tần suất xuất hiện của các từ ngữ sáo rỗng, các cặp từ nối lặp đi lặp lại mang đậm "văn phong AI" (Ví dụ: "Tóm lại,", "Đáng chú ý,", "Nhìn chung,", "Hơn nữa,", "Như đã đề cập," hoặc cấu trúc liệt kê chia mảng quá máy móc).
+- Đưa ra ước lượng phần trăm (%) văn bản có khả năng do AI tự động sinh ra (aiGeneratedPercent) và chỉ rõ những đoạn văn/câu văn cụ thể nào mang nặng dấu vết của AI vào mảng \`aiSegments\`.
+
+2. RÀ SOÁT LỖI CHÍNH TẢ & LỖI ĐỊNH DẠNG VĂN BẢN (TYPO & FONT CHECK):
+- Phát hiện các từ viết sai chính tả tiếng Việt, từ viết dính chữ, lỗi gõ phím, thiếu dấu (Ví dụ do lỗi convert từ PDF sang TXT như: "đat" -> đạt, "lóp" -> lớp, "lý" -> lí theo quy chuẩn mới, hoặc từ dính công thức).
+- Liệt kê chính xác từ viết sai và từ chuẩn cần sửa lại vào mảng \`spellingErrors\`. KHÔNG tính các từ ngữ chuyên môn.
+
+3. KIỂM TRA TRÙNG LẶP, ĐẠO VĂN (MỨC ĐỘ KHẮT KHE):
+- Tách văn bản thành chuỗi phân đoạn liên tục.
+- Rà soát từng phân đoạn trùng lặp, bỏ qua lý luận chung. Đánh dấu isDuplicate: true nếu có trùng lặp.
+- CHỈ ĐÁNH DẤU LÀ ĐẠO VĂN NẾU PHÁT HIỆN MỘT ĐOẠN VĂN RẤT DÀI (khoảng 5 dòng trở lên, hoặc tương đương trên 70-80 từ liên tục) ĐƯỢC SAO CHÉP Y HỆT từ một tài liệu cụ thể. BỎ QUA HOÀN TOÀN các đoạn ngắn hơn 5 dòng.
+- TRÍCH XUẤT THÔNG TIN NGUỒN NGHIÊM NGẶT vào mảng \`sources\`: KHÔNG được trả về trang chủ chung chung. BẮT BUỘC đưa ra Tiêu đề cụ thể của chính bài viết, file giáo án chứa đoạn văn đó.
+- Đánh giá Mức cảnh báo (warningLevel): Tỷ lệ trùng lặp không được vượt quá 30%. Nếu tổng tỷ lệ > 30%, ghi "Vi phạm quy định (trên 30%)". Nếu <= 30%, ghi "Đạt yêu cầu (dưới 30%)".
 
 Bắt buộc trả về đúng định dạng JSON có cấu trúc sau:
 {
@@ -396,14 +398,14 @@ Bắt buộc trả về đúng định dạng JSON có cấu trúc sau:
   }],
   "segments": [{"text": "...", "isDuplicate": true, "sourceId": "src1", "type": "red"}],
   "spellingErrors": [{
-    "errorText": "sáng kiến", 
-    "correction": "sáng tạo", 
-    "context": "Đây là một sáng kiến hay...", 
-    "reason": "Lỗi đánh máy"
+    "errorText": "đat", 
+    "correction": "đạt", 
+    "context": "Mục tiêu đat được...", 
+    "reason": "Lỗi convert từ PDF/Lỗi đánh máy"
   }],
   "aiSegments": [
-    "Việc áp dụng các phương pháp giáo dục hiện đại...",
-    "Bên cạnh đó, việc đổi mới phương pháp giảng dạy..."
+    "Nhìn chung, việc áp dụng các phương pháp giáo dục hiện đại...",
+    "Tóm lại, đổi mới phương pháp giảng dạy..."
   ]
 }
 Lưu ý: Chỉ trả về JSON, KHÔNG BỔ SUNG BẤT KỲ VĂN BẢN NÀO KHÁC. Đảm bảo bóc tách đoạn văn nghi ngờ AI tạo vào mảng aiSegments nếu aiGeneratedPercent > 0.`;
@@ -513,6 +515,62 @@ Lưu ý: Chỉ trả về JSON, KHÔNG BỔ SUNG BẤT KỲ VĂN BẢN NÀO KHÁ
   }
 });
 
+if (!process.env.VERCEL) {
+  app.post('/api/format-markdown', async (req, res) => {
+    try {
+      const { text, apiKeys, model } = req.body;
+      if (!text) {
+        return res.status(400).json({ error: 'Missing text' });
+      }
+      
+      // We only process if there are API keys, otherwise return original text
+      if (!apiKeys || !Array.isArray(apiKeys) || apiKeys.length === 0) {
+        return res.json({ formattedText: text });
+      }
+
+      const targetModel = model || 'gemini-3.5-flash';
+
+      const systemInstruction = `Ý THỨC VAI TRÒ:
+Bạn là module xử lý giao diện chuyên sâu của Hệ thống chấm Sáng kiến kinh nghiệm (Hội đồng xã Hàm Yên). 
+
+NHIỆM VỤ CỦA BẠN:
+Đọc văn bản thô được trích xuất từ file PDF, thực hiện dọn rác kỹ thuật và chuyển đổi thành định dạng Markdown (.md) chuẩn để làm bản xem trước (Preview) cho Giám khảo.
+
+CÁC YÊU CẦU BẮT BUỘC KHÔNG ĐƯỢC VI PHẠM (ĐỂ GIỮ NGUYÊN BẢN FILE WORD):
+1. GIỮ NGUYÊN BẢN NỘI DUNG: Tuyệt đối không được tóm tắt, không tự ý lược bỏ câu chữ, không viết lại văn phong của tác giả. Giữ nguyên 100% nội dung chữ.
+2. LỌC BỎ HÌNH ẢNH VÀ KÝ TỰ RÁC: Chỉ lọc bỏ các đoạn text mô tả ảnh (nếu có), các mã ký tự lạ xuất hiện do lỗi convert từ PDF sang. ĐẶC BIỆT LƯU Ý: Khắc phục lỗi khoảng trắng thừa giữa các chữ cái (ví dụ: 't r ẻ' phải sửa thành 'trẻ', 'm ộ t' sửa thành 'một', 'đ ể' sửa thành 'để'). BẮT BUỘC ghép các chữ cái bị rời rạc thành từ hoàn chỉnh có nghĩa.
+3. KHÔI PHỤC CẤU TRÚC TIÊU ĐỀ (HEADING): Nhận diện các mục lớn nhỏ để định dạng chuẩn:
+   - Tên cơ quan, quốc hiệu, tiêu đề chính: Căn giữa (sử dụng cặp thẻ <center>...</center>).
+   - Mục lớn (I, II, III, Chương I, Chương II): Sử dụng ký hiệu \`##\`
+   - Mục nhỏ (1., 2., a), b)): Sử dụng ký hiệu \`###\` hoặc \`####\`
+4. DỰNG LẠI BẢNG BIỂU CHUẨN MƯỢT: Nếu văn bản thô có chứa các dòng dữ liệu dạng bảng (ngăn cách bởi dấu phẩy hoặc hàng lối), bạn BẮT BUỘC phải dựng lại thành định dạng Bảng Markdown (Markdown Table) để hiển thị hàng lối rõ ràng như file Word gốc.
+5. NGẮT ĐOẠN RÕ RÀNG: Giữa các đoạn văn phải có một dòng trống để giao diện không bị dính chữ vào nhau.
+
+Chỉ trả về nội dung chuỗi Markdown sạch sau khi xử lý cấu trúc, KHÔNG giải thích, KHÔNG thêm bớt từ ngữ ngoài văn bản gốc.`;
+
+      const promptText = `Nội dung văn bản thô từ file PDF cần định dạng:\n\n"""\n${text}\n"""`;
+
+      const parsedResult = await executeWithKeys(apiKeys, async (ai) => {
+        const response = await ai.models.generateContent({
+          model: targetModel,
+          contents: [{ text: promptText }],
+          config: {
+            systemInstruction,
+          }
+        });
+
+        let resultText = response.text || '';
+        resultText = resultText.replace(/^```markdown\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
+        return { formattedText: resultText };
+      });
+
+      res.json(parsedResult);
+    } catch (error: any) {
+      console.error('Format Markdown Error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+}
 
 // Setup Vite Dev server integration
 async function startServer() {
@@ -532,62 +590,7 @@ async function startServer() {
   }
 
   if (!process.env.VERCEL) {
-    app.post('/api/format-markdown', async (req, res) => {
-  try {
-    const { text, apiKeys, model } = req.body;
-    if (!text) {
-      return res.status(400).json({ error: 'Missing text' });
-    }
-    
-    // We only process if there are API keys, otherwise return original text
-    if (!apiKeys || !Array.isArray(apiKeys) || apiKeys.length === 0) {
-      return res.json({ formattedText: text });
-    }
-
-    const targetModel = model || 'gemini-3.5-flash';
-
-    const systemInstruction = `Ý THỨC VAI TRÒ:
-Bạn là module xử lý giao diện chuyên sâu của Hệ thống chấm Sáng kiến kinh nghiệm (Hội đồng xã Hàm Yên). 
-
-NHIỆM VỤ CỦA BẠN:
-Đọc văn bản thô được trích xuất từ file PDF, thực hiện dọn rác kỹ thuật và chuyển đổi thành định dạng Markdown (.md) chuẩn để làm bản xem trước (Preview) cho Giám khảo.
-
-CÁC YÊU CẦU BẮT BUỘC KHÔNG ĐƯỢC VI PHẠM (ĐỂ GIỮ NGUYÊN BẢN FILE WORD):
-1. GIỮ NGUYÊN BẢN NỘI DUNG: Tuyệt đối không được tóm tắt, không tự ý lược bỏ câu chữ, không viết lại văn phong của tác giả. Giữ nguyên 100% nội dung chữ.
-2. LỌC BỎ HÌNH ẢNH VÀ KÝ TỰ RÁC: Chỉ lọc bỏ các đoạn text mô tả ảnh (nếu có), các mã ký tự lạ xuất hiện do lỗi convert từ PDF sang. ĐẶC BIỆT LƯU Ý: Khắc phục lỗi khoảng trắng thừa giữa các chữ cái (ví dụ: 't r ẻ' phải sửa thành 'trẻ', 'm ộ t' sửa thành 'một', 'đ ể' sửa thành 'để'). BẮT BUỘC ghép các chữ cái bị rời rạc thành từ hoàn chỉnh có nghĩa.
-3. KHÔI PHỤC CẤU TRÚC TIÊU ĐỀ (HEADING): Nhận diện các mục lớn nhỏ để định dạng chuẩn:
-   - Tên cơ quan, quốc hiệu, tiêu đề chính: Căn giữa (sử dụng cặp thẻ <center>...</center>).
-   - Mục lớn (I, II, III, Chương I, Chương II): Sử dụng ký hiệu \`##\`
-   - Mục nhỏ (1., 2., a), b)): Sử dụng ký hiệu \`###\` hoặc \`####\`
-4. DỰNG LẠI BẢNG BIỂU CHUẨN MƯỢT: Nếu văn bản thô có chứa các dòng dữ liệu dạng bảng (ngăn cách bởi dấu phẩy hoặc hàng lối), bạn BẮT BUỘC phải dựng lại thành định dạng Bảng Markdown (Markdown Table) để hiển thị hàng lối rõ ràng như file Word gốc.
-5. NGẮT ĐOẠN RÕ RÀNG: Giữa các đoạn văn phải có một dòng trống để giao diện không bị dính chữ vào nhau.
-
-Chỉ trả về nội dung chuỗi Markdown sạch sau khi xử lý cấu trúc, KHÔNG giải thích, KHÔNG thêm bớt từ ngữ ngoài văn bản gốc.`;
-
-    const promptText = `Nội dung văn bản thô từ file PDF cần định dạng:\n\n"""\n${text}\n"""`;
-
-    const parsedResult = await executeWithKeys(apiKeys, async (ai) => {
-      const response = await ai.models.generateContent({
-        model: targetModel,
-        contents: [{ text: promptText }],
-        config: {
-          systemInstruction,
-        }
-      });
-
-      let resultText = response.text || '';
-      resultText = resultText.replace(/^```markdown\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
-      return { formattedText: resultText };
-    });
-
-    res.json(parsedResult);
-  } catch (error: any) {
-    console.error('Format Markdown Error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.listen(PORT, '0.0.0.0', () => {
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`[Hàm Yên SDK] Server is running on http://0.0.0.0:${PORT}`);
     });
   }

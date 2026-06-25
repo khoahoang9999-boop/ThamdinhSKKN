@@ -52,6 +52,10 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { extractTextFromPDFFile } from './utils/pdfExtract';
 import LoginScreen from './components/LoginScreen';
+import { auth, db } from './lib/firebase';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { signOut } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 // Setup PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -60,12 +64,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 const renderList = (lines?: string[], defaultText = ".......................................................................................................................................................................................") => {
   if (!lines || lines.length === 0) return defaultText;
   return lines.map((line, idx) => {
-    const text = line.trim();
-    if (text.startsWith('-') || text.startsWith('•')) {
-      return <p key={idx} className="mb-1">{text}</p>;
-    } else {
-      return <p key={idx} className="mb-1">- {text}</p>;
+    let text = line.trim();
+    if (text.startsWith('-') || text.startsWith('•') || text.startsWith('+')) {
+      text = text.substring(1).trim();
     }
+    return <p key={idx} className="mb-1" style={{ textAlign: 'justify' }}>- {text}</p>;
   });
 };
 
@@ -95,7 +98,7 @@ export default function App() {
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, loadingAuth] = useAuthState(auth);
   
   // Evaluation History
   const [history, setHistory] = useState<EvaluationResult[]>([]);
@@ -109,6 +112,15 @@ export default function App() {
   const printRef = useRef<HTMLDivElement>(null);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [isGeneratingWord, setIsGeneratingWord] = useState(false);
+
+  const getRadioCheck = (score: number | undefined, maxScore: number) => {
+    if (score === undefined) return 3;
+    const ratio = score / maxScore;
+    if (ratio >= 0.85) return 0;
+    if (ratio >= 0.6) return 1;
+    if (ratio >= 0.4) return 2;
+    return 3;
+  };
 
   const handleDownloadPDF = useReactToPrint({
     contentRef: printRef,
@@ -132,19 +144,6 @@ export default function App() {
       
       let htmlString = printRef.current.innerHTML;
 
-      // Microsoft Word's HTML parser doesn't understand CSS grid/flex very well.
-      // Transforming the specific grid headers into a table for Word document structure.
-      htmlString = htmlString.replace(
-        /<div class="grid grid-cols-2[^>]*">\s*<div>([\s\S]*?)<\/div>\s*<div>([\s\S]*?)<\/div>\s*<\/div>/,
-        '<table style="width:100%; border:none; margin-bottom: 2rem;"><tr><td style="width:50%; text-align:center; vertical-align:top; border:none; padding:0;">$1</td><td style="width:50%; text-align:center; vertical-align:top; border:none; padding:0;">$2</td></tr></table>'
-      );
-
-      // Transforming the signature grid at the bottom into a table
-      htmlString = htmlString.replace(
-        /<div class="flex justify-end text-center text-\[14px\] mt-12 gap-6 pt-6">\s*<div class="w-\[300px\]">([\s\S]*?)<\/div>\s*<\/div>/,
-        '<table style="width:100%; border:none; margin-top:3rem;"><tr><td style="width:50%; border:none;"></td><td style="width:50%; text-align:center; vertical-align:top; border:none;">$1</td></tr></table>'
-      );
-
       // Replace spans with block class to divs so Word natively breaks lines
       htmlString = htmlString.replace(/<span class="block([^"]*)">([\s\S]*?)<\/span>/g, '<div class="$1">$2</div>');
 
@@ -159,24 +158,37 @@ export default function App() {
         }
         div.WordSection1 { page: WordSection1; }
         body { font-family: "Times New Roman", Times, serif; font-size: 14pt; padding: 0; margin: 0; line-height: 1.5; }
-        table { border-collapse: collapse; width: 100%; border: 1px solid black; }
+        p, div { margin-top: 0; mso-line-height-rule: auto; line-height: 150%; }
+        p { margin-bottom: 6pt; }
+        .space-y-1 > div, .space-y-1 > p { margin-top: 0; margin-bottom: 6pt; }
+        .space-y-2 > div, .space-y-2 > p { margin-top: 0; margin-bottom: 6pt; }
+        .space-y-4 > div, .space-y-4 > p { margin-top: 0; margin-bottom: 6pt; }
+        table { border-collapse: collapse; width: 100%; border: 1px solid black; mso-line-height-rule: exactly; line-height: 100%; }
+        .header-banner div { line-height: 1.0 !important; mso-line-height-rule: exactly !important; margin: 0 !important; }
+        .content-justify, .content-justify p, .content-justify div { text-align: justify; }
         th, td { border: 1px solid black; padding: 8px; text-align: left; }
         .font-bold { font-weight: bold; }
         .text-center { text-align: center; }
         .uppercase { text-transform: uppercase; }
-        .mb-8 { margin-bottom: 2rem; }
-        .my-6 { margin-top: 1.5rem; margin-bottom: 1.5rem; }
-        .mb-2 { margin-bottom: 0.5rem; }
-        .mb-6 { margin-bottom: 1.5rem; }
+        .mb-1 { margin-bottom: 6pt; }
+        .mb-2 { margin-bottom: 6pt; }
+        .mb-4 { margin-bottom: 12pt; }
+        .mb-6 { margin-bottom: 18pt; }
+        .mb-8 { margin-bottom: 24pt; }
+        .mt-1 { margin-top: 6pt; }
+        .mt-2 { margin-top: 6pt; }
+        .mt-4 { margin-top: 12pt; }
+        .mt-6 { margin-top: 18pt; }
+        .my-6 { margin-top: 18pt; margin-bottom: 18pt; }
         .block { display: block; }
-        .mt-4 { margin-top: 1rem; }
         h3 { font-size: 16pt; margin: 0; padding: 0;}
         h2 { font-size: 17pt; margin: 0; padding: 0;}
         h4 { font-size: 14pt; margin: 0; padding: 0;}
         .underline { text-decoration: underline; }
         .italic { font-style: italic; }
         .text-right { text-align: right; }
-        .text-justify { text-align: justify; }
+        .text-justify { text-align: justify; line-height: 150%; }
+        .leading-relaxed { line-height: 150%; }
         .pl-5 { padding-left: 1.5rem; }
         .ml-4 { margin-left: 1rem; }
         .ml-2 { margin-left: 0.5rem; }
@@ -261,78 +273,96 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isLoading, mainTab]);
 
-  // Load history on start
+  // Sync with Firestore
+  const syncToFirestore = async (dataToSync: any) => {
+    if (!user) return;
+    try {
+      await setDoc(doc(db, 'users', user.uid), dataToSync, { merge: true });
+    } catch (error) {
+      console.error("Error saving to Firestore:", error);
+    }
+  };
+
+  // Load user data on auth change
   useEffect(() => {
-    const saved = localStorage.getItem('ham_yen_skkn_history');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setHistory(parsed);
-          if (parsed.length > 0) {
-            setCurrentResult(parsed[0]);
-            setPlagResult(parsed[0].plagiarismResult || null);
-            if (parsed[0].teacher) setTeacher(parsed[0].teacher);
-            if (parsed[0].initiativeTitle) setInitiativeTitle(parsed[0].initiativeTitle);
-            if (parsed[0].appliedDate) setAppliedDate(parsed[0].appliedDate);
-            if (parsed[0].initiativeText) setInitiativeText(parsed[0].initiativeText);
+    const loadUserData = async () => {
+      if (user) {
+        try {
+          const docRef = doc(db, 'users', user.uid);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            
+            if (data.history && Array.isArray(data.history)) {
+              setHistory(data.history);
+              if (data.history.length > 0) {
+                const first = data.history[0];
+                setCurrentResult(first);
+                setPlagResult(first.plagiarismResult || null);
+                if (first.teacher) setTeacher(first.teacher);
+                if (first.initiativeTitle) setInitiativeTitle(first.initiativeTitle);
+                if (first.appliedDate) setAppliedDate(first.appliedDate);
+                if (first.initiativeText) setInitiativeText(first.initiativeText);
+              }
+            }
+            if (data.apiKeys && Array.isArray(data.apiKeys)) {
+              setApiKeys(data.apiKeys);
+            }
+            if (data.reviewerName) {
+              setReviewerName(data.reviewerName);
+            }
           }
+        } catch (error) {
+          console.error("Error loading user data from Firestore:", error);
         }
-      } catch (e) {
-        console.error("Error loading localStorage:", e);
+      } else {
+        // Reset state on logout
+        setHistory([]);
+        setCurrentResult(null);
+        setPlagResult(null);
+        setApiKeys(['']);
+        setReviewerName('');
       }
-    }
-
-    const savedKeys = localStorage.getItem('ham_yen_skkn_apikeys');
-    if (savedKeys) {
-      try {
-        const parsed = JSON.parse(savedKeys);
-        if (Array.isArray(parsed)) setApiKeys(parsed);
-      } catch (e) {}
-    }
-
-    const savedReviewer = localStorage.getItem('ham_yen_skkn_reviewer');
-    if (savedReviewer) {
-      setReviewerName(savedReviewer);
-    }
-  }, []);
+    };
+    loadUserData();
+  }, [user]);
 
   const handleKeyChange = (index: number, value: string) => {
     const newKeys = [...apiKeys];
     newKeys[index] = value;
     setApiKeys(newKeys);
-    localStorage.setItem('ham_yen_skkn_apikeys', JSON.stringify(newKeys));
+    syncToFirestore({ apiKeys: newKeys });
   };
 
   const handleAddKey = () => {
     const newKeys = [...apiKeys, ''];
     setApiKeys(newKeys);
-    localStorage.setItem('ham_yen_skkn_apikeys', JSON.stringify(newKeys));
+    syncToFirestore({ apiKeys: newKeys });
   };
 
   const handleRemoveKey = (index: number) => {
     if (apiKeys.length <= 1) return;
     const newKeys = apiKeys.filter((_, i) => i !== index);
     setApiKeys(newKeys);
-    localStorage.setItem('ham_yen_skkn_apikeys', JSON.stringify(newKeys));
+    syncToFirestore({ apiKeys: newKeys });
   };
 
   const toggleKeyVisibility = (index: number) => {
     setVisibleKeys(prev => ({ ...prev, [index]: !prev[index] }));
   };
 
-  // Save history to localstorage
+  // Save history
   const saveToHistory = (newResult: EvaluationResult) => {
     const updated = [newResult, ...history.filter(h => h.id !== newResult.id)];
     setHistory(updated);
-    localStorage.setItem('ham_yen_skkn_history', JSON.stringify(updated));
+    syncToFirestore({ history: updated });
   };
 
   const deleteHistoryItem = (id: string, e: MouseEvent) => {
     e.stopPropagation();
     const updated = history.filter(h => h.id !== id);
     setHistory(updated);
-    localStorage.setItem('ham_yen_skkn_history', JSON.stringify(updated));
+    syncToFirestore({ history: updated });
     if (currentResult?.id === id) {
       const nextRes = updated.length > 0 ? updated[0] : null;
       setCurrentResult(nextRes);
@@ -437,24 +467,29 @@ export default function App() {
       const kScore = h.tinhKhoaHoc?.score || 0;
       const hScore = h.hieuQua?.score || 0;
       const pScore = h.phamVi?.score || 0;
+      const cScore = h.minhChung?.score || 0;
       
       if (h.hieuQua && h.phamVi) {
         if (h.tinhMoi) {
           // New format
-          totalScore = mScore + kScore + hScore + pScore;
-          if (totalScore >= 50 && mScore >= 10 && kScore >= 10 && hScore >= 20 && pScore >= 10) {
-            isPass = "Đạt";
-          } else {
-            isFail = "Không đạt";
-          }
+          totalScore = mScore + kScore + hScore + pScore + cScore;
         } else {
           // Legacy format
           totalScore = hScore + pScore;
-          if (totalScore >= 50 && hScore >= 20 && pScore >= 20) {
-            isPass = "Đạt";
-          } else {
-            isFail = "Không đạt";
-          }
+        }
+      }
+
+      if (h.classification) {
+        if (h.classification.includes('Không đạt')) {
+          isFail = 'Không đạt';
+        } else {
+          isPass = 'Đạt';
+        }
+      } else {
+        if (totalScore >= 50) {
+          isPass = "Đạt";
+        } else {
+          isFail = "Không đạt";
         }
       }
 
@@ -989,8 +1024,16 @@ export default function App() {
     }
   };
 
-  if (!isAuthenticated) {
-    return <LoginScreen onLogin={() => setIsAuthenticated(true)} />;
+  if (loadingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginScreen onLogin={() => {}} />;
   }
 
   return (
@@ -1020,7 +1063,7 @@ export default function App() {
                 Thẩm định online: <span className="text-natural-border font-bold">Quyết định 270/QĐ-HĐSK</span>
               </div>
               <button
-                onClick={() => setIsAuthenticated(false)}
+                onClick={() => signOut(auth)}
                 className="bg-red-500/20 hover:bg-red-500/30 text-white border border-red-500/50 px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors"
                 title="Đăng xuất"
               >
@@ -1347,7 +1390,7 @@ export default function App() {
                     value={reviewerName}
                     onChange={(e) => {
                       setReviewerName(e.target.value);
-                      localStorage.setItem('ham_yen_skkn_reviewer', e.target.value);
+                      syncToFirestore({ reviewerName: e.target.value });
                     }}
                     placeholder="Tên Giám khảo..."
                     className="w-full text-sm border border-natural-border rounded-xl px-3.5 py-2 focus:border-natural-primary focus:ring-1 focus:ring-natural-primary focus:outline-none bg-[#fffefc]"
@@ -1844,7 +1887,7 @@ export default function App() {
                             <div className="mt-1 bg-white p-3 rounded-lg border border-natural-border shadow-sm">
                               <p className="text-xs font-semibold text-natural-text flex items-center justify-between">
                                 Kết luận: 
-                                <span className={`font-bold px-2 py-1 rounded-md text-white ${plagResult.totalDuplicatePercent > 25 || (plagResult.aiGeneratedPercent || 0) > 20 ? 'bg-red-600' : 'bg-[#5a5a40]'}`}>
+                                <span className={`font-bold px-2 py-1 rounded-md text-white ${plagResult.totalDuplicatePercent > 25 || (plagResult.aiGeneratedPercent || 0) > 20 ? 'bg-red-600' : 'bg-emerald-600'}`}>
                                   {plagResult.totalDuplicatePercent > 25 || (plagResult.aiGeneratedPercent || 0) > 20 ? 'Không đạt yêu cầu' : 'Đạt yêu cầu (An toàn)'}
                                 </span>
                               </p>
@@ -2459,56 +2502,62 @@ export default function App() {
             </div>
 
             {/* Printable Area content (Strict administrative Vietnam layout) */}
-            <div ref={printRef} className="p-8 md:p-12 overflow-y-auto flex-1 font-serif leading-relaxed text-black max-w-[210mm] mx-auto bg-white print-force-static" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
+            <div ref={printRef} className="p-8 md:p-12 overflow-y-auto flex-1 font-serif leading-relaxed text-black max-w-[210mm] mx-auto bg-white print-force-static text-justify content-justify" style={{ fontFamily: '"Times New Roman", Times, serif', fontSize: '14pt' }}>
               
               {/* Top Banner */}
-              <div className="grid grid-cols-2 text-center text-[13px] uppercase tracking-tight mb-8">
-                <div>
-                  <div className="block font-bold" style={{ fontWeight: 'bold' }}>UBND XÃ HÀM YÊN</div>
-                  <div className="block mt-0.5 font-bold" style={{ fontWeight: 'bold' }}>HỘI ĐỒNG SÁNG KIẾN</div>
-                  <div className="block text-xs normal-case mt-1" style={{ fontStyle: 'italic' }}>
-                    <i>(Thành lập theo QĐ số 615 /QĐ-UBND<br/>ngày 04/08/2025)</i>
-                  </div>
-                </div>
-                <div>
-                  <div className="block font-bold" style={{ fontWeight: 'bold' }}>CỘNG HOÀ XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
-                  <div className="block font-bold normal-case" style={{ fontWeight: 'bold' }}>Độc lập – Tự do – Hạnh phúc</div>
-                  <div className="block border-b border-black w-40 mx-auto mt-0.5 pb-2"></div>
-                  <div className="block normal-case mt-4 text-right pr-6" style={{ fontStyle: 'italic' }}>
-                    <i>Hàm Yên, ngày {new Date(currentResult.evaluatedAt).getDate()} tháng {new Date(currentResult.evaluatedAt).getMonth() + 1} năm {new Date(currentResult.evaluatedAt).getFullYear()}</i>
-                  </div>
-                </div>
-              </div>
+              <table className="header-banner" style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '2rem', border: 'none' }} border={0}>
+                <tbody>
+                  <tr style={{ border: 'none' }}>
+                    <td style={{ width: '45%', textAlign: 'center', verticalAlign: 'top', padding: 0, border: 'none' }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '13pt' }}>UBND XÃ HÀM YÊN</div>
+                      <div style={{ fontWeight: 'bold', fontSize: '13pt' }}>HỘI ĐỒNG SÁNG KIẾN</div>
+                      <div style={{ borderBottom: '1px solid black', width: '120px', margin: '4px auto 0' }}></div>
+                      <div style={{ fontStyle: 'italic', fontSize: '13pt', marginTop: '4px', fontWeight: 'normal' }}>
+                        (Thành lập theo QĐ số 615 /QĐ-UBND<br/>ngày 04/08/2025)
+                      </div>
+                    </td>
+                    <td style={{ width: '55%', textAlign: 'center', verticalAlign: 'top', padding: 0, border: 'none' }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '13pt' }}>CỘNG HOÀ XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
+                      <div style={{ fontWeight: 'bold', fontSize: '13pt' }}>Độc lập - Tự do - Hạnh phúc</div>
+                      <div style={{ borderBottom: '1.5px solid black', width: '160px', margin: '4px auto 0' }}></div>
+                      <div style={{ fontStyle: 'italic', fontSize: '14pt', marginTop: '12px', fontWeight: 'normal' }}>
+                        Hàm Yên, ngày {new Date(currentResult.evaluatedAt).getDate()} tháng {new Date(currentResult.evaluatedAt).getMonth() + 1} năm {new Date(currentResult.evaluatedAt).getFullYear()}
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
 
               {/* Title doc */}
-              <div className="text-center mb-8">
-                <h2 className="text-[17px] font-bold uppercase tracking-tight">
+              <div style={{ lineHeight: '150%' }}>&nbsp;</div>
+              <div style={{ textAlign: 'center', marginBottom: '12pt' }}>
+                <div className="font-bold uppercase tracking-tight" style={{ fontSize: '14pt', textAlign: 'center' }}>
                   PHIẾU ĐÁNH GIÁ
-                </h2>
-                <h3 className="text-[16px] font-bold uppercase tracking-wider">
+                </div>
+                <div className="font-bold uppercase tracking-wider" style={{ fontSize: '14pt', textAlign: 'center' }}>
                   HỒ SƠ ĐỀ NGHỊ CÔNG NHẬN SÁNG KIẾN
-                </h3>
+                </div>
               </div>
 
               {/* I. THÔNG TIN CHUNG */}
-              <div className="text-[14px]">
+              <div>
                 <h4 className="font-bold mb-2">I. THÔNG TIN CHUNG</h4>
                 <div className="space-y-1 mb-6">
                   <div><strong>Họ và tên tác giả:</strong> {currentResult.teacher.teacherName || '...................................................'}</div>
                   <div><strong>Chức vụ, đơn vị công tác:</strong> {currentResult.teacher.role ? `${currentResult.teacher.role}, ` : ''}{currentResult.teacher.schoolName || '...................................................'}</div>
                   <div><strong>Tên sáng kiến:</strong> {currentResult.initiativeTitle}</div>
                   <div><strong>Lĩnh vực áp dụng:</strong> {currentResult.teacher.subject || '...................................................'}</div>
-                  <div className="flex gap-8 items-center mt-1">
-                    <strong>Phạm vi đề nghị công nhận:</strong>
-                    <span>□ Cấp cơ sở</span>
-                    <span>□ Cấp tỉnh</span>
+                  <div className="mt-1">
+                    <strong>Phạm vi đề nghị công nhận:</strong>&nbsp;&nbsp;&nbsp;&nbsp;
+                    <span>☑ Cấp cơ sở</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                    <span>□ Cấp tỉnh</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                     <span>□ Toàn quốc</span>
                   </div>
                   <div className="mt-2"><strong>Người nhận xét:</strong> {reviewerName || '...................................................'}</div>
                   <div><strong>Ngày nhận xét, đánh giá:</strong> Ngày {new Date(currentResult.evaluatedAt).getDate()} tháng {new Date(currentResult.evaluatedAt).getMonth() + 1} năm {new Date(currentResult.evaluatedAt).getFullYear()}</div>
                 </div>
 
-                <h4 className="font-bold mb-4 mt-6 text-[15px]">II. NHẬN XÉT, ĐÁNH GIÁ THEO CÁC TIÊU CHÍ</h4>
+                <h4 className="font-bold mb-4 mt-6">II. NHẬN XÉT, ĐÁNH GIÁ THEO CÁC TIÊU CHÍ</h4>
 
                 {/* 1. Điểm Mới */}
                 <div className="mb-6">
@@ -2516,38 +2565,58 @@ export default function App() {
                   <div className="italic mb-2 font-medium">1.1. Nội dung nhận xét</div>
                   <div className="mb-2 italic">a) Mức độ mới của giải pháp</div>
                   <div className="space-y-1 mb-2 ml-2">
-                    <div>□ Hoàn toàn mới</div>
-                    <div>□ Cải tiến từ giải pháp đã có</div>
-                    <div>□ Kết hợp các giải pháp cũ theo hướng mới</div>
-                    <div>□ Chưa thể hiện rõ tính mới</div>
+                    <div>{getRadioCheck(currentResult.tinhMoi?.score, 10) === 0 ? '☑' : '□'} Hoàn toàn mới</div>
+                    <div>{getRadioCheck(currentResult.tinhMoi?.score, 10) === 1 ? '☑' : '□'} Cải tiến từ giải pháp đã có</div>
+                    <div>{getRadioCheck(currentResult.tinhMoi?.score, 10) === 2 ? '☑' : '□'} Kết hợp các giải pháp cũ theo hướng mới</div>
+                    <div>{getRadioCheck(currentResult.tinhMoi?.score, 10) === 3 ? '☑' : '□'} Chưa thể hiện rõ tính mới</div>
                   </div>
                   <div className="mb-2 italic">Nhận xét:</div>
-                  <div className="text-[13px] mb-4 min-h-[60px] leading-relaxed">
-                    {renderList(currentResult.tinhMoi?.analysis)}
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[60px] leading-relaxed">
+                    {currentResult.tinhMoi?.analysis && currentResult.tinhMoi.analysis.length > 0 
+                      ? renderList(currentResult.tinhMoi.analysis)
+                      : (currentResult.tinhMoi && currentResult.tinhMoi.score >= 8.5 
+                          ? 'Sáng kiến có tính mới đột phá, hoàn toàn khác biệt so với các giải pháp trước đây.' 
+                          : currentResult.tinhMoi && currentResult.tinhMoi.score >= 7
+                          ? 'Sáng kiến có sự cải tiến và sáng tạo dựa trên các phương pháp cũ.'
+                          : 'Sáng kiến có sự kết hợp các giải pháp nhưng tính mới chưa thật sự nổi bật.')}
                   </div>
 
                   <div className="mb-2 italic">b) Điểm mới nổi bật của sáng kiến</div>
                   <div className="mb-2">Giải pháp đổi mới ở nội dung nào:</div>
                   <div className="space-y-1 mb-2 ml-2">
-                    <div>□ Phương pháp thực hiện</div>
-                    <div>□ Quy trình thực hiện</div>
-                    <div>□ Cách tổ chức</div>
+                    <div>{currentResult.tinhMoi && currentResult.tinhMoi.score >= 5 ? '☑' : '□'} Phương pháp thực hiện</div>
+                    <div>{currentResult.tinhMoi && currentResult.tinhMoi.score >= 7 ? '☑' : '□'} Quy trình thực hiện</div>
+                    <div>{currentResult.tinhMoi && currentResult.tinhMoi.score >= 6 ? '☑' : '□'} Cách tổ chức</div>
                     <div>□ Công cụ hỗ trợ</div>
                     <div>□ Phương pháp quản lý</div>
-                    <div>□ Ứng dụng công nghệ</div>
+                    <div>{currentResult.tinhMoi && currentResult.tinhMoi.score >= 8.5 ? '☑' : '□'} Ứng dụng công nghệ</div>
                     <div>□ Khác: ...................................................................</div>
                   </div>
                   <div className="mb-2 italic">Nhận xét cụ thể:</div>
-                  <div className="text-[13px] mb-4 min-h-[40px] leading-relaxed">
-                    {renderList(currentResult.tinhMoi?.pros)}
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
+                    {currentResult.tinhMoi?.pros && currentResult.tinhMoi.pros.length > 0 
+                      ? renderList(currentResult.tinhMoi.pros)
+                      : (currentResult.tinhMoi && currentResult.tinhMoi.score >= 7 
+                          ? 'Sáng kiến có tính mới rõ rệt trong việc đổi mới phương pháp thực hiện và cách tổ chức.' 
+                          : 'Sáng kiến có cải tiến từ giải pháp cũ nhưng chưa có điểm mới thực sự đột phá.')}
                   </div>
 
                   <div className="mb-2 italic">c) So sánh với giải pháp thông thường trước đây</div>
-                  <div className="text-justify mb-4 min-h-[40px]">.......................................................................................................................................................................................</div>
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
+                    {currentResult.tinhMoi?.comparison && currentResult.tinhMoi.comparison.length > 0 
+                      ? renderList(currentResult.tinhMoi.comparison)
+                      : (currentResult.tinhMoi && currentResult.tinhMoi.score >= 7 
+                          ? 'Giải pháp có nhiều điểm ưu việt, khắc phục được các hạn chế của phương pháp giáo dục truyền thống.' 
+                          : 'Chưa thể hiện rõ sự vượt trội so với các phương pháp hiện hành.')}
+                  </div>
 
                   <div className="mb-2 italic">d) Hạn chế về tính mới (nếu có)</div>
-                  <div className="text-[13px] mb-4 min-h-[40px] leading-relaxed">
-                     {renderList(currentResult.tinhMoi?.cons)}
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
+                     {currentResult.tinhMoi?.cons && currentResult.tinhMoi.cons.length > 0
+                        ? renderList(currentResult.tinhMoi.cons)
+                        : (currentResult.tinhMoi && currentResult.tinhMoi.score >= 8
+                            ? ''
+                            : 'Giải pháp mang tính kế thừa, thiếu các yếu tố đột phá để làm nên một mô hình hoàn toàn mới.')}
                   </div>
 
                   <div className="italic mb-1 font-medium">1.2. Điểm chấm</div>
@@ -2561,58 +2630,76 @@ export default function App() {
                   <div className="mb-2 italic">a) Hiệu quả chuyên môn</div>
                   <div className="mb-1">Nâng cao chất lượng công việc:</div>
                   <div className="space-y-1 mb-2 ml-2">
-                    <div>□ Rõ rệt</div>
-                    <div>□ Khá</div>
-                    <div>□ Trung bình</div>
-                    <div>□ Chưa rõ</div>
+                    <div>{getRadioCheck(currentResult.hieuQua?.score, 40) === 0 ? '☑' : '□'} Rõ rệt</div>
+                    <div>{getRadioCheck(currentResult.hieuQua?.score, 40) === 1 ? '☑' : '□'} Khá</div>
+                    <div>{getRadioCheck(currentResult.hieuQua?.score, 40) === 2 ? '☑' : '□'} Trung bình</div>
+                    <div>{getRadioCheck(currentResult.hieuQua?.score, 40) === 3 ? '☑' : '□'} Chưa rõ</div>
                   </div>
                   <div className="mb-2 italic">Nhận xét:</div>
-                  <div className="text-[13px] mb-4 min-h-[60px] leading-relaxed">
-                    {renderList(currentResult.hieuQua?.analysis)}
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[60px] leading-relaxed">
+                    {currentResult.hieuQua?.analysis && currentResult.hieuQua.analysis.length > 0 
+                      ? renderList(currentResult.hieuQua.analysis)
+                      : (currentResult.hieuQua && currentResult.hieuQua.score >= 32 
+                          ? 'Hiệu quả chuyên môn được nâng cao rõ rệt, cải thiện đáng kể chất lượng công việc.' 
+                          : currentResult.hieuQua && currentResult.hieuQua.score >= 25
+                          ? 'Đã mang lại hiệu quả chuyên môn khá tốt trong phạm vi áp dụng.'
+                          : 'Hiệu quả chuyên môn ở mức trung bình, cần thêm thời gian để kiểm chứng.')}
                   </div>
 
                   <div className="mb-2 italic">b) Hiệu quả kinh tế (nếu có)</div>
                   <div className="mb-1">Tiết kiệm:</div>
                   <div className="space-y-1 mb-2 ml-2">
-                    <div>□ Thời gian</div>
+                    <div>{currentResult.hieuQua && currentResult.hieuQua.score >= 25 ? '☑' : '□'} Thời gian</div>
                     <div>□ Kinh phí</div>
-                    <div>□ Nhân lực</div>
-                    <div>□ Hồ sơ, thủ tục</div>
+                    <div>{currentResult.hieuQua && currentResult.hieuQua.score >= 28 ? '☑' : '□'} Nhân lực</div>
+                    <div>{currentResult.hieuQua && currentResult.hieuQua.score >= 30 ? '☑' : '□'} Hồ sơ, thủ tục</div>
                     <div>□ Khác: ...................................................................</div>
                   </div>
                   <div className="mb-2 italic">Nhận xét:</div>
-                  <div className="text-justify mb-4 min-h-[40px]">.......................................................................................................................................................................................</div>
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
+                    {currentResult.hieuQua && currentResult.hieuQua.score >= 25 ? 'Sáng kiến góp phần tiết kiệm thời gian, nhân lực đáng kể khi áp dụng vào thực tế giảng dạy và quản lý.' : 'Chưa có minh chứng rõ ràng về hiệu quả kinh tế hoặc tiết kiệm chi phí.'}
+                  </div>
 
                   <div className="mb-2 italic">c) Hiệu quả xã hội</div>
                   <div className="mb-1">Tác động tích cực đến:</div>
                   <div className="space-y-1 mb-2 ml-2">
-                    <div>□ Người học</div>
-                    <div>□ Cơ quan, đơn vị</div>
+                    <div>{currentResult.hieuQua && currentResult.hieuQua.score >= 20 ? '☑' : '□'} Người học</div>
+                    <div>{currentResult.hieuQua && currentResult.hieuQua.score >= 24 ? '☑' : '□'} Cơ quan, đơn vị</div>
                     <div>□ Nhân dân</div>
                     <div>□ Phụ huynh</div>
-                    <div>□ Cộng đồng</div>
-                    <div>□ Chuyển đổi số</div>
+                    <div>{currentResult.hieuQua && currentResult.hieuQua.score >= 32 ? '☑' : '□'} Cộng đồng</div>
+                    <div>{currentResult.hieuQua && currentResult.hieuQua.score >= 35 ? '☑' : '□'} Chuyển đổi số</div>
                     <div>□ Cải cách hành chính</div>
                   </div>
                   <div className="mb-2 italic">Nhận xét:</div>
-                  <div className="text-[13px] mb-4 min-h-[40px] leading-relaxed">
-                    {renderList(currentResult.hieuQua?.pros)}
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
+                    {currentResult.hieuQua?.pros && currentResult.hieuQua.pros.length > 0 
+                      ? renderList(currentResult.hieuQua.pros)
+                      : (currentResult.hieuQua && currentResult.hieuQua.score >= 25 
+                          ? 'Sáng kiến mang lại hiệu quả xã hội tích cực, đặc biệt đối với người học và cơ quan đơn vị.' 
+                          : 'Hiệu quả xã hội ở mức khá, cần có thêm thời gian để đánh giá tác động sâu rộng hơn.')}
                   </div>
 
                   <div className="mb-2 italic">d) Minh chứng hiệu quả</div>
                   <div className="space-y-1 mb-2 ml-2">
-                    <div>□ Có số liệu đối chiếu trước – sau</div>
-                    <div>□ Có bảng biểu minh chứng</div>
-                    <div>□ Có hình ảnh/video minh chứng</div>
+                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 10 ? '☑' : '□'} Có số liệu đối chiếu trước – sau</div>
+                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 8 ? '☑' : '□'} Có bảng biểu minh chứng</div>
+                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 12 ? '☑' : '□'} Có hình ảnh/video minh chứng</div>
                     <div>□ Có xác nhận của đơn vị</div>
-                    <div>□ Chưa đầy đủ minh chứng</div>
+                    <div>{currentResult.minhChung && currentResult.minhChung.score < 8 ? '☑' : '□'} Chưa đầy đủ minh chứng</div>
                   </div>
                   <div className="mb-2 italic">Nhận xét:</div>
-                  <div className="text-justify mb-4 min-h-[40px]">.......................................................................................................................................................................................</div>
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
+                    {currentResult.minhChung && currentResult.minhChung.score >= 10 ? 'Minh chứng được cung cấp tương đối đầy đủ, có bảng biểu và số liệu minh hoạ rõ ràng.' : 'Chưa cung cấp đầy đủ minh chứng thực tế, hình ảnh hoặc số liệu để tăng tính thuyết phục.'}
+                  </div>
 
                   <div className="mb-2 italic">e) Tồn tại, hạn chế</div>
-                  <div className="text-[13px] mb-4 min-h-[40px] leading-relaxed">
-                    {renderList(currentResult.hieuQua?.cons)}
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
+                    {(currentResult.hanChe && currentResult.hanChe.length > 0) || (currentResult.hieuQua?.cons && currentResult.hieuQua.cons.length > 0)
+                      ? renderList(currentResult.hanChe || currentResult.hieuQua?.cons)
+                      : (currentResult.hieuQua && currentResult.hieuQua.score >= 32
+                          ? ''
+                          : 'Cần có thêm những thống kê chi tiết để đánh giá định lượng được hiệu quả một cách chính xác nhất.')}
                   </div>
 
                   <div className="italic mb-1 font-medium">2.2. Điểm chấm</div>
@@ -2624,35 +2711,47 @@ export default function App() {
                   <div className="font-bold mb-2 uppercase">3. ĐÁNH GIÁ KHẢ NĂNG ÁP DỤNG, NHÂN RỘNG (Tối đa 20 điểm)</div>
                   <div className="italic mb-2 font-medium">3.1. Khả năng áp dụng</div>
                   <div className="space-y-1 mb-2 ml-2">
-                    <div>□ Dễ áp dụng</div>
-                    <div>□ Có thể triển khai diện rộng</div>
-                    <div>□ Phù hợp thực tiễn cơ sở</div>
-                    <div>□ Ít kinh phí</div>
-                    <div>□ Dễ thực hiện</div>
-                    <div>□ Khó triển khai diện rộng</div>
+                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 14 ? '☑' : '□'} Dễ áp dụng</div>
+                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 17 ? '☑' : '□'} Có thể triển khai diện rộng</div>
+                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 12 ? '☑' : '□'} Phù hợp thực tiễn cơ sở</div>
+                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 15 ? '☑' : '□'} Ít kinh phí</div>
+                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 16 ? '☑' : '□'} Dễ thực hiện</div>
+                    <div>{currentResult.phamVi && currentResult.phamVi.score < 14 ? '☑' : '□'} Khó triển khai diện rộng</div>
                   </div>
                   <div className="mb-2 italic">Nhận xét:</div>
-                  <div className="text-[13px] mb-4 min-h-[60px] leading-relaxed">
-                    {renderList(currentResult.phamVi?.analysis)}
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[60px] leading-relaxed">
+                    {currentResult.phamVi?.analysis && currentResult.phamVi.analysis.length > 0 
+                      ? renderList(currentResult.phamVi.analysis)
+                      : (currentResult.phamVi && currentResult.phamVi.score >= 15 
+                          ? 'Sáng kiến dễ áp dụng, triển khai nhanh và tiết kiệm chi phí, phù hợp với thực tiễn.' 
+                          : 'Khả năng triển khai diện rộng còn hạn chế, đòi hỏi điều kiện cơ sở vật chất nhất định.')}
                   </div>
 
                   <div className="italic mb-2 font-medium">3.2. Khả năng nhân rộng</div>
                   <div className="mb-1">Có thể áp dụng:</div>
                   <div className="space-y-1 mb-2 ml-2">
-                    <div>□ Trong tổ chuyên môn</div>
-                    <div>□ Trong cơ quan, đơn vị</div>
-                    <div>□ Toàn ngành</div>
-                    <div>□ Liên ngành</div>
-                    <div>□ Phạm vi cấp tỉnh</div>
+                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 10 ? '☑' : '□'} Trong tổ chuyên môn</div>
+                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 14 ? '☑' : '□'} Trong cơ quan, đơn vị</div>
+                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 17 ? '☑' : '□'} Toàn ngành</div>
+                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 18 ? '☑' : '□'} Liên ngành</div>
+                    <div>{currentResult.phamVi && currentResult.phamVi.score >= 19 ? '☑' : '□'} Phạm vi cấp tỉnh</div>
                   </div>
                   <div className="mb-2 italic">Nhận xét:</div>
-                  <div className="text-[13px] mb-4 min-h-[40px] leading-relaxed">
-                     {renderList(currentResult.phamVi?.pros)}
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
+                     {currentResult.phamVi?.pros && currentResult.phamVi.pros.length > 0 
+                      ? renderList(currentResult.phamVi.pros) 
+                      : (currentResult.phamVi && currentResult.phamVi.score >= 15 
+                          ? 'Sáng kiến có khả năng áp dụng và nhân rộng cao trong toàn ngành giáo dục hoặc cấp tỉnh.' 
+                          : 'Khả năng nhân rộng chủ yếu ở cấp cơ sở hoặc trong tổ chuyên môn.')}
                   </div>
 
                   <div className="italic mb-2 font-medium">3.3. Hạn chế trong nhân rộng</div>
-                  <div className="text-[13px] mb-4 min-h-[40px] leading-relaxed">
-                     {renderList(currentResult.phamVi?.cons)}
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
+                     {currentResult.phamVi?.cons && currentResult.phamVi.cons.length > 0
+                        ? renderList(currentResult.phamVi.cons)
+                        : (currentResult.phamVi && currentResult.phamVi.score >= 15
+                            ? ''
+                            : 'Cần sự đồng bộ về cơ sở vật chất và nhân lực để triển khai ở quy mô lớn hơn.')}
                   </div>
 
                   <div className="italic mb-1 font-medium">3.4. Điểm chấm</div>
@@ -2664,35 +2763,47 @@ export default function App() {
                   <div className="font-bold mb-2 uppercase">4. ĐÁNH GIÁ TÍNH KHOA HỌC, HÌNH THỨC TRÌNH BÀY (Tối đa 15 điểm)</div>
                   <div className="italic mb-2 font-medium">4.1. Hình thức trình bày</div>
                   <div className="space-y-1 mb-2 ml-2">
-                    <div>□ Đúng thể thức</div>
-                    <div>□ Bố cục logic</div>
-                    <div>□ Diễn đạt rõ ràng</div>
-                    <div>□ Có phụ lục minh chứng</div>
-                    <div>□ Có số liệu thống kê</div>
-                    <div>□ Trình bày khoa học</div>
+                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 8 ? '☑' : '□'} Đúng thể thức</div>
+                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 10 ? '☑' : '□'} Bố cục logic</div>
+                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 12 ? '☑' : '□'} Diễn đạt rõ ràng</div>
+                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 14 ? '☑' : '□'} Có phụ lục minh chứng</div>
+                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 13 ? '☑' : '□'} Có số liệu thống kê</div>
+                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 14 ? '☑' : '□'} Trình bày khoa học</div>
                   </div>
                   <div className="mb-2 italic">Nhận xét:</div>
-                  <div className="text-[13px] mb-4 min-h-[40px] leading-relaxed">
-                    {renderList(currentResult.tinhKhoaHoc?.hinhThuc)}
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
+                    {currentResult.tinhKhoaHoc?.hinhThuc && currentResult.tinhKhoaHoc.hinhThuc.length > 0 
+                      ? renderList(currentResult.tinhKhoaHoc.hinhThuc)
+                      : (currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 12 
+                          ? 'Báo cáo sáng kiến được trình bày đúng thể thức, bố cục logic, diễn đạt mạch lạc, rõ ràng.' 
+                          : 'Hình thức trình bày đáp ứng yêu cầu cơ bản, tuy nhiên cần chú ý thêm về tính logic của bố cục.')}
                   </div>
 
                   <div className="italic mb-2 font-medium">4.2. Tính khoa học</div>
                   <div className="space-y-1 mb-2 ml-2">
-                    <div>□ Có cơ sở lý luận</div>
-                    <div>□ Có cơ sở thực tiễn</div>
-                    <div>□ Có phương pháp nghiên cứu</div>
-                    <div>□ Có quy trình thực hiện</div>
-                    <div>□ Có đánh giá kết quả</div>
-                    <div>□ Chưa thể hiện rõ tính khoa học</div>
+                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 8 ? '☑' : '□'} Có cơ sở lý luận</div>
+                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 10 ? '☑' : '□'} Có cơ sở thực tiễn</div>
+                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 11 ? '☑' : '□'} Có phương pháp nghiên cứu</div>
+                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 12 ? '☑' : '□'} Có quy trình thực hiện</div>
+                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 13 ? '☑' : '□'} Có đánh giá kết quả</div>
+                    <div>{currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score < 8 ? '☑' : '□'} Chưa thể hiện rõ tính khoa học</div>
                   </div>
                   <div className="mb-2 italic">Nhận xét:</div>
-                  <div className="text-[13px] mb-4 min-h-[60px] leading-relaxed">
-                     {renderList(currentResult.tinhKhoaHoc?.analysis)}
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[60px] leading-relaxed">
+                     {currentResult.tinhKhoaHoc?.analysis && currentResult.tinhKhoaHoc.analysis.length > 0 
+                      ? renderList(currentResult.tinhKhoaHoc.analysis)
+                      : (currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 12 
+                          ? 'Sáng kiến có đầy đủ cơ sở lý luận, thực tiễn và phương pháp nghiên cứu chặt chẽ.' 
+                          : 'Đã xây dựng được quy trình nhưng chưa nêu bật được cơ sở khoa học một cách thuyết phục nhất.')}
                   </div>
 
                   <div className="italic mb-2 font-medium">4.3. Tồn tại, hạn chế</div>
-                  <div className="text-[13px] mb-4 min-h-[40px] leading-relaxed">
-                     {renderList(currentResult.tinhKhoaHoc?.cons)}
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
+                     {currentResult.tinhKhoaHoc?.cons && currentResult.tinhKhoaHoc.cons.length > 0
+                        ? renderList(currentResult.tinhKhoaHoc.cons)
+                        : (currentResult.tinhKhoaHoc && currentResult.tinhKhoaHoc.score >= 12 
+                            ? ''
+                            : 'Cần trau chuốt thêm về phần đánh giá kết quả và các số liệu minh họa.')}
                   </div>
 
                   <div className="italic mb-1 font-medium">4.4. Điểm chấm</div>
@@ -2704,18 +2815,22 @@ export default function App() {
                   <div className="font-bold mb-2 uppercase">5. ĐÁNH GIÁ MINH CHỨNG, SỐ LIỆU (Tối đa 15 điểm)</div>
                   <div className="italic mb-2 font-medium">Nội dung đánh giá</div>
                   <div className="space-y-1 mb-2 ml-2">
-                    <div>□ Có minh chứng đầy đủ</div>
-                    <div>□ Có số liệu đối chứng</div>
-                    <div>□ Có khảo sát đầu vào – đầu ra</div>
-                    <div>□ Có xác nhận thực tế</div>
-                    <div>□ Có tính khách quan</div>
-                    <div>□ Minh chứng chưa đầy đủ</div>
+                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 10 ? '☑' : '□'} Có minh chứng đầy đủ</div>
+                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 12 ? '☑' : '□'} Có số liệu đối chứng</div>
+                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 13 ? '☑' : '□'} Có khảo sát đầu vào – đầu ra</div>
+                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 14 ? '☑' : '□'} Có xác nhận thực tế</div>
+                    <div>{currentResult.minhChung && currentResult.minhChung.score >= 11 ? '☑' : '□'} Có tính khách quan</div>
+                    <div>{currentResult.minhChung && currentResult.minhChung.score < 10 ? '☑' : '□'} Minh chứng chưa đầy đủ</div>
                   </div>
                   <div className="mb-2 italic">Nhận xét:</div>
-                  <div className="text-[13px] mb-4 min-h-[60px] leading-relaxed">
-                     {renderList(currentResult.minhChung?.analysis)}
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[60px] leading-relaxed">
+                     {currentResult.minhChung?.analysis && currentResult.minhChung.analysis.length > 0 
+                      ? renderList(currentResult.minhChung.analysis)
+                      : (currentResult.minhChung && currentResult.minhChung.score >= 12 
+                          ? 'Minh chứng được sắp xếp hệ thống, có tính đối chứng rõ ràng và đảm bảo khách quan.' 
+                          : 'Các minh chứng đã được đính kèm nhưng cần bổ sung thêm số liệu đánh giá đầu ra chi tiết hơn.')}
                   </div>
-                  <div className="text-[13px] mb-4 min-h-[40px] leading-relaxed">
+                  <div style={{ textAlign: 'justify' }} className="mb-4 min-h-[40px] leading-relaxed">
                      {renderList(currentResult.minhChung?.cons, "")}
                   </div>
 
@@ -2724,53 +2839,53 @@ export default function App() {
                 </div>
 
               {/* Table Scores */}
-              <h4 className="font-bold mb-2 mt-4 text-[14px]">III. TỔNG HỢP ĐIỂM</h4>
+              <h4 className="font-bold mb-2 mt-4">III. TỔNG HỢP ĐIỂM</h4>
               <div className="mb-6">
-                <table className="w-full border-collapse border border-black text-xs text-left">
+                <table className="w-full border-collapse border border-black text-xs text-left" style={{ fontSize: '14pt' }}>
                   <thead>
                     <tr className="bg-neutral-50 text-center font-bold">
-                      <th className="border border-black p-2.5 w-12 text-center">STT</th>
-                      <th className="border border-black p-2.5">Nội dung đánh giá</th>
-                      <th className="border border-black p-2.5 w-24 text-center">Điểm tối đa</th>
-                      <th className="border border-black p-2.5 w-24 text-center">Điểm chấm</th>
+                      <th className="border border-black p-2.5 w-12 text-center" style={{ textAlign: 'center' }}>STT</th>
+                      <th className="border border-black p-2.5" style={{ textAlign: 'center' }}>Nội dung đánh giá</th>
+                      <th className="border border-black p-2.5 w-24 text-center" style={{ textAlign: 'center' }}>Điểm tối đa</th>
+                      <th className="border border-black p-2.5 w-24 text-center" style={{ textAlign: 'center' }}>Điểm chấm</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="border border-black p-2.5 text-center font-bold">1</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>1</td>
                       <td className="border border-black p-2.5">Tính mới, sáng tạo</td>
-                      <td className="border border-black p-2.5 text-center text-neutral-600">10đ</td>
-                      <td className="border border-black p-2.5 text-center font-bold">{currentResult.tinhMoi?.score || 0}</td>
+                      <td className="border border-black p-2.5 text-center text-neutral-600" style={{ textAlign: 'center' }}>10đ</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>{currentResult.tinhMoi?.score || 0}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-2.5 text-center font-bold">2</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>2</td>
                       <td className="border border-black p-2.5">Tính hiệu quả</td>
-                      <td className="border border-black p-2.5 text-center text-neutral-600">40đ</td>
-                      <td className="border border-black p-2.5 text-center font-bold">{currentResult.hieuQua?.score || 0}</td>
+                      <td className="border border-black p-2.5 text-center text-neutral-600" style={{ textAlign: 'center' }}>40đ</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>{currentResult.hieuQua?.score || 0}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-2.5 text-center font-bold">3</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>3</td>
                       <td className="border border-black p-2.5">Khả năng áp dụng, nhân rộng</td>
-                      <td className="border border-black p-2.5 text-center text-neutral-600">20đ</td>
-                      <td className="border border-black p-2.5 text-center font-bold">{currentResult.phamVi?.score || 0}</td>
+                      <td className="border border-black p-2.5 text-center text-neutral-600" style={{ textAlign: 'center' }}>20đ</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>{currentResult.phamVi?.score || 0}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-2.5 text-center font-bold">4</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>4</td>
                       <td className="border border-black p-2.5">Tính khoa học, hình thức trình bày</td>
-                      <td className="border border-black p-2.5 text-center text-neutral-600">15đ</td>
-                      <td className="border border-black p-2.5 text-center font-bold">{currentResult.tinhKhoaHoc?.score || 0}</td>
+                      <td className="border border-black p-2.5 text-center text-neutral-600" style={{ textAlign: 'center' }}>15đ</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>{currentResult.tinhKhoaHoc?.score || 0}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-2.5 text-center font-bold">5</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>5</td>
                       <td className="border border-black p-2.5">Minh chứng, số liệu</td>
-                      <td className="border border-black p-2.5 text-center text-neutral-600">15đ</td>
-                      <td className="border border-black p-2.5 text-center font-bold">{currentResult.minhChung?.score || 0}</td>
+                      <td className="border border-black p-2.5 text-center text-neutral-600" style={{ textAlign: 'center' }}>15đ</td>
+                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center' }}>{currentResult.minhChung?.score || 0}</td>
                     </tr>
                     {currentResult.evaluationMode !== 'comment_only' && (
-                      <tr className="bg-neutral-50/50 font-bold">
-                        <td className="border border-black p-2.5 text-center" colSpan={2}>TỔNG CỘNG</td>
-                        <td className="border border-black p-2.5 text-center">100đ</td>
-                        <td className="border border-black p-2.5 text-center text-base underline text-red-900">{currentResult.totalScore}đ</td>
+                      <tr className="bg-neutral-50/50 font-bold" style={{ fontWeight: 'bold' }}>
+                        <td className="border border-black p-2.5 text-center font-bold" colSpan={2} style={{ textAlign: 'center', fontWeight: 'bold' }}><strong>TỔNG CỘNG</strong></td>
+                        <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center', fontWeight: 'bold' }}><strong>100đ</strong></td>
+                        <td className="border border-black p-2.5 text-center font-bold text-base underline text-red-900" style={{ textAlign: 'center', fontWeight: 'bold' }}><strong>{currentResult.totalScore}đ</strong></td>
                       </tr>
                     )}
                   </tbody>
@@ -2778,7 +2893,7 @@ export default function App() {
               </div>
 
               {/* AI Checking Data */}
-              <div className="mb-6 p-4 border border-black text-sm">
+              <div className="mb-6 p-4 border border-black text-sm" style={{ fontSize: '14pt' }}>
                 <h4 className="font-bold underline mb-3 uppercase tracking-tight text-center">PHIẾU KIỂM ĐỊNH KỸ THUẬT: ĐẠO VĂN, NỘI DUNG AI CAO & LỖI CHÍNH TẢ</h4>
                 <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-4">
@@ -2868,7 +2983,7 @@ export default function App() {
               </div>
 
               {/* Classification administrative result */}
-              <h4 className="font-bold mb-2 text-[14px]">IV. XẾP LOẠI ĐỀ NGHỊ</h4>
+              <h4 className="font-bold mb-2">IV. XẾP LOẠI ĐỀ NGHỊ</h4>
               <div className="bg-neutral-50 p-4 border border-black rounded text-sm mb-6 space-y-2">
                 <div>
                   Căn cứ kết quả chấm điểm, đề nghị xếp loại: 
@@ -2879,31 +2994,31 @@ export default function App() {
               </div>
 
               {/* Improvements */}
-              <div className="mb-8 text-[14px]">
+              <div className="mb-8">
                 <h4 className="font-bold mb-2">V. NHẬN XÉT CHUNG VÀ KIẾN NGHỊ</h4>
                 <div className="space-y-4">
                   <div>
                     <strong className="block mb-1">1. Ưu điểm nổi bật:</strong>
                     {currentResult.uuDiem && currentResult.uuDiem.length > 0 ? (
-                      <ul className="list-disc pl-5 space-y-1 text-sm">
+                      <div className="space-y-1" style={{ textAlign: 'justify' }}>
                         {currentResult.uuDiem.map((u, idx) => (
-                          <li key={idx}>{u.replace(/\.$/, '')}</li>
+                          <div key={idx} className="ml-4">- {u.replace(/\.$/, '')}</div>
                         ))}
-                      </ul>
+                      </div>
                     ) : (
-                      <div className="text-justify text-sm">........................................................................................................................................................................................................................................................................................................</div>
+                      <div className="italic text-gray-700" style={{ textAlign: 'justify' }}>Sáng kiến trình bày rõ ràng, có tính ứng dụng thực tiễn, giải quyết được một số khó khăn trong công tác chuyên môn.</div>
                     )}
                   </div>
                   <div>
                     <strong className="block mb-1">2. Tồn tại, hạn chế:</strong>
                     {(currentResult.hanChe && currentResult.hanChe.length > 0) || (currentResult.improvements && currentResult.improvements.length > 0) ? (
-                      <ul className="list-disc pl-5 space-y-1 text-sm">
+                      <div className="space-y-1" style={{ textAlign: 'justify' }}>
                         {(currentResult.hanChe || currentResult.improvements || []).map((imp, idx) => (
-                          <li key={idx}>{imp.replace(/\.$/, '')}</li>
+                          <div key={idx} className="ml-4">- {imp.replace(/\.$/, '')}</div>
                         ))}
-                      </ul>
+                      </div>
                     ) : (
-                      <div className="text-justify text-sm">........................................................................................................................................................................................................................................................................................................</div>
+                      <div className="italic text-gray-700" style={{ textAlign: 'justify' }}>Cần tiếp tục theo dõi và bổ sung minh chứng định lượng trong quá trình triển khai thực tế.</div>
                     )}
                   </div>
                   <div className="pt-2">
@@ -2914,20 +3029,26 @@ export default function App() {
                       <div className="block">{currentResult.classification.includes('Không đạt') ? '☑' : '□'} Đề nghị không công nhận</div>
                     </div>
                     <div className="block mt-2">
-                      Ý kiến khác: .........................................................................................................................................................................................................................
+                      <strong className="mr-1">Ý kiến khác:</strong>&nbsp;
+                      <span className="italic text-gray-700 text-sm">Không có.</span>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Signatures */}
-              <div className="flex justify-end text-center text-[14px] mt-12 gap-6 pt-6">
-                <div className="w-[300px]">
-                  <strong className="block">NGƯỜI NHẬN XÉT, ĐÁNH GIÁ</strong>
-                  <span className="block text-xs text-neutral-500 italic mb-20">(Ký và ghi rõ họ tên)</span>
-                  <div className="font-bold">{reviewerName || '........................................'}</div>
-                </div>
-              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '3rem', border: 'none' }} border={0}>
+                <tbody>
+                  <tr style={{ border: 'none' }}>
+                    <td style={{ width: '50%', border: 'none' }}></td>
+                    <td style={{ width: '50%', textAlign: 'center', verticalAlign: 'top', fontSize: '14pt', border: 'none' }}>
+                      <strong style={{ display: 'block' }}>NGƯỜI NHẬN XÉT, ĐÁNH GIÁ</strong>
+                      <div style={{ fontSize: '14pt', fontStyle: 'italic', marginBottom: '80px' }}>(Ký và ghi rõ họ tên)</div>
+                      <div style={{ fontWeight: 'bold' }}>{reviewerName || '........................................'}</div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
 
             </div>
 
