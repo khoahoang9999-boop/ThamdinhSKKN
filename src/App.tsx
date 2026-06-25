@@ -1888,11 +1888,10 @@ export default function App() {
                       <p class="step-desc"><span class="step">B2:</span> <span class="highlight">Nhập Key API</span> vào ô tương ứng. Nếu chưa nhập, AI sẽ <span class="highlight">không thể hoạt động</span> (báo lỗi).</p>
                       <p class="step-desc"><span class="step">B3:</span> Nhấn <span class="highlight">"Lưu cấu hình"</span>.</p>
 
-                      <h3>Bước 2: Tải lên Sáng kiến & Nhập thông tin giám khảo</h3>
+                      <h3>Bước 2: Tải lên Sáng kiến & Tự động trích xuất</h3>
                       <p class="step-desc"><span class="step">B1:</span> Tại thẻ <strong>"1. Hồ sơ Sáng kiến"</strong>, <span class="highlight">tải file Sáng kiến lên</span> (hỗ trợ .PDF, .TXT) hoặc dán nội dung.</p>
                       <p class="step-desc"><span class="step">B2:</span> <span class="highlight">Chờ AI tự động trích xuất</span> và điền đầy đủ các thông tin tác giả.</p>
-                      <p class="step-desc"><span class="step">B3:</span> <span class="highlight">Nhập Tên Giám khảo / Người nhận xét</span> ở bên cột thông tin.</p>
-                      <p class="step-desc"><span class="step">B4:</span> Nhấn <span class="highlight">"Tiếp tục: 2. Đạo văn, Chính tả & Sử dụng AI"</span> để chuyển sang bước 2.</p>
+                      <p class="step-desc"><span class="step">B3:</span> Nhấn <span class="highlight">"Tiếp tục: 2. Đạo văn, Chính tả & Sử dụng AI"</span> để chuyển sang bước 2.</p>
 
                       <h3>Bước 3: Kiểm tra Đạo văn & Lỗi kỹ thuật</h3>
                       <p class="step-desc"><span class="step">B1:</span> Chuyển sang thẻ <span class="highlight">"2. Đạo văn, Chính tả & Sử dụng AI"</span>.</p>
@@ -1902,7 +1901,9 @@ export default function App() {
 
                       <h3>Bước 4: Thẩm định (Chấm điểm) & Sinh nhận xét</h3>
                       <p class="step-desc"><span class="step">B1:</span> Chuyển sang thẻ <span class="highlight">"3. Thẩm định & Xuất phiếu"</span>.</p>
-                      <p class="step-desc"><span class="step">B2:</span> Nhấn nút <span class="highlight">"Bắt đầu Thẩm định (Chấm điểm)"</span>.</p>
+                      <p class="step-desc"><span class="step">B2:</span> <strong>Lựa chọn phân loại thẩm định:</strong></p>
+                      <p class="step-desc" style="padding-left: 20px;">- Tại thẻ <strong>"Sơ bộ (Phòng VH-XH)"</strong>: Nhập <span class="highlight">Tên Giám khảo / Người nhận xét</span> và nhấn <span class="highlight">"Bắt đầu Thẩm định Sơ bộ"</span>.</p>
+                      <p class="step-desc" style="padding-left: 20px;">- Tại thẻ <strong>"Hội đồng Thẩm định"</strong>: Nhập <span class="highlight">Hội đồng / Tổ thẩm định nào</span> (Ví dụ: CỦA THÀNH VIÊN TỔ THẨM ĐỊNH SÁNG KIẾN) và <span class="highlight">Danh sách các thành viên hội đồng</span> nếu có, sau đó tiến hành Thẩm định.</p>
                       <p class="step-desc"><span class="step">B3:</span> <span class="highlight">Chờ hệ thống AI đóng vai trò Hội đồng</span> đọc toàn bộ nội dung, chấm điểm chi tiết và viết nhận xét ưu/nhược điểm.</p>
 
                       <h3>Bước 5: Chỉnh sửa & Xuất phiếu kết quả</h3>
@@ -1938,12 +1939,11 @@ export default function App() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <h3 className="font-bold text-natural-primary text-base flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-natural-primary text-white flex items-center justify-center text-xs">2</div> Bước 2: Tải lên Sáng kiến & Nhập thông tin giám khảo</h3>
+                <h3 className="font-bold text-natural-primary text-base flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-natural-primary text-white flex items-center justify-center text-xs">2</div> Bước 2: Tải lên Sáng kiến & Tự động trích xuất</h3>
                 <ul className="list-none pl-8 flex flex-col gap-1">
                   <li>B1: Tại thẻ <strong>"1. Hồ sơ Sáng kiến"</strong>, <strong className="text-red-600">tải file Sáng kiến lên</strong> (hỗ trợ .PDF, .TXT) hoặc dán nội dung.</li>
                   <li>B2: <strong className="text-red-600">Chờ AI tự động trích xuất</strong> và điền đầy đủ các thông tin tác giả.</li>
-                  <li>B3: <strong className="text-red-600">Nhập Tên Giám khảo / Người nhận xét</strong> ở bên cột thông tin.</li>
-                  <li>B4: Nhấn <strong className="text-red-600">"Tiếp tục: 2. Đạo văn, Chính tả & Sử dụng AI"</strong> để chuyển sang bước 2.</li>
+                  <li>B3: Nhấn <strong className="text-red-600">"Tiếp tục: 2. Đạo văn, Chính tả & Sử dụng AI"</strong> để chuyển sang bước sau.</li>
                 </ul>
               </div>
 
@@ -1959,9 +1959,14 @@ export default function App() {
 
               <div className="flex flex-col gap-2">
                 <h3 className="font-bold text-natural-primary text-base flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-natural-primary text-white flex items-center justify-center text-xs">4</div> Bước 4: Thẩm định (Chấm điểm) & Sinh nhận xét</h3>
-                <ul className="list-none pl-8 flex flex-col gap-1">
+                <ul className="list-none pl-8 flex flex-col gap-1.5">
                   <li>B1: Chuyển sang thẻ <strong className="text-red-600">"3. Thẩm định & Xuất phiếu"</strong>.</li>
-                  <li>B2: Nhấn nút <strong className="text-red-600">"Bắt đầu Thẩm định (Chấm điểm)"</strong>.</li>
+                  <li>B2: <strong>Lựa chọn & Nhập thông tin Thẩm định:</strong>
+                    <ul className="list-disc pl-5 mt-1 space-y-1">
+                      <li>Tại thẻ <strong className="text-natural-primary">"Sơ bộ (Phòng VH-XH)"</strong>: Nhập <strong className="text-red-600">Tên Giám khảo / Người nhận xét</strong>, sau đó nhấn nút <strong className="text-red-600">"Bắt đầu Thẩm định Sơ bộ"</strong>.</li>
+                      <li>Tại thẻ <strong className="text-amber-800">"Hội đồng Thẩm định"</strong>: Nhập <strong className="text-amber-800">Hội đồng / Tổ thẩm định nào</strong> (Ví dụ: <em>CỦA THÀNH VIÊN TỔ THẨM ĐỊNH SÁNG KIẾN</em>) và <strong className="text-amber-800">Danh sách thành viên</strong> nếu có, sau đó tiến hành kích hoạt thẩm định hoặc thẩm định lại.</li>
+                    </ul>
+                  </li>
                   <li>B3: <strong className="text-red-600">Chờ hệ thống AI đóng vai trò Hội đồng</strong> đọc toàn bộ nội dung, chấm điểm chi tiết và viết nhận xét ưu/nhược điểm.</li>
                 </ul>
               </div>
@@ -2247,7 +2252,7 @@ export default function App() {
               </div>
 
               {/* Basic Meta Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-natural-text uppercase mb-1.5">
                     Chức danh chuyên môn
@@ -2262,21 +2267,6 @@ export default function App() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-natural-text uppercase mb-1.5">
-                    Tên Giám khảo / Người nhận xét
-                  </label>
-                  <input
-                    type="text"
-                    value={reviewerName}
-                    onChange={(e) => {
-                      setReviewerName(e.target.value);
-                      syncToFirestore({ reviewerName: e.target.value });
-                    }}
-                    placeholder="Tên Giám khảo..."
-                    className="w-full text-sm border border-natural-border rounded-xl px-3.5 py-2 focus:border-natural-primary focus:ring-1 focus:ring-natural-primary focus:outline-none bg-[#fffefc]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-natural-text uppercase mb-1.5">
                     Thời điểm áp dụng đầu tiên
                   </label>
                   <input
@@ -2285,110 +2275,6 @@ export default function App() {
                     onChange={(e) => setAppliedDate(e.target.value)}
                     className="w-full text-sm border border-natural-border rounded-xl px-3.5 py-2 focus:border-natural-primary focus:ring-1 focus:ring-natural-primary focus:outline-none bg-[#fffefc]"
                   />
-                </div>
-              </div>
-
-              {/* Hội đồng Thẩm định (Tùy chọn) */}
-              <div className="border-t border-natural-border/60 pt-5 mt-4">
-                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <div className="h-4 w-1 bg-natural-primary rounded-full"></div>
-                    <h3 className="text-xs font-bold text-natural-primary uppercase tracking-wider">Thành viên Tổ Thẩm định / Hội đồng Thẩm định (Tùy chọn)</h3>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const newId = 'member_' + Date.now();
-                      const updated = [...councilMembers, { id: newId, name: '', unit: '', role: '' }];
-                      setCouncilMembers(updated);
-                      syncToFirestore({ councilMembers: updated });
-                    }}
-                    className="flex items-center gap-1.5 text-[11px] font-bold text-natural-primary hover:text-natural-secondary bg-[#faf9f5] border border-natural-border px-3 py-1.5 rounded-xl transition cursor-pointer hover:bg-natural-accent"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Thêm thành viên
-                  </button>
-                </div>
-                
-                <div className="mb-4">
-                  <label className="block text-xs font-bold text-natural-text uppercase mb-1.5">
-                    Hội đồng / Tổ thẩm định nào (Ví dụ: CỦA THÀNH VIÊN TỔ THẨM ĐỊNH SÁNG KIẾN)
-                  </label>
-                  <input
-                    type="text"
-                    value={councilName}
-                    onChange={(e) => {
-                      setCouncilName(e.target.value);
-                      syncToFirestore({ councilName: e.target.value });
-                    }}
-                    placeholder="Nhập tên hội đồng hoặc tổ thẩm định..."
-                    className="w-full text-sm border border-natural-border rounded-xl px-3.5 py-2.5 focus:border-natural-primary focus:ring-1 focus:ring-natural-primary focus:outline-none bg-[#fffefc] text-natural-text font-medium"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {councilMembers.map((m, index) => (
-                    <div key={m.id || index} className="bg-[#faf9f5]/50 p-4 rounded-xl border border-natural-border/60 space-y-3 shadow-sm relative">
-                      <div className="flex items-center justify-between border-b border-natural-border/60 pb-1.5">
-                        <div className="text-[11px] font-bold text-natural-primary uppercase">Thành viên {index + 1}</div>
-                        {councilMembers.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = councilMembers.filter(member => member.id !== m.id);
-                              setCouncilMembers(updated);
-                              syncToFirestore({ councilMembers: updated });
-                            }}
-                            className="text-red-500 hover:text-red-700 transition opacity-80 hover:opacity-100 cursor-pointer p-1 rounded hover:bg-red-50"
-                            title="Xóa thành viên này"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-natural-text uppercase mb-1">Họ và tên</label>
-                        <input
-                          type="text"
-                          value={m.name}
-                          onChange={(e) => {
-                            const updated = councilMembers.map(member => member.id === m.id ? { ...member, name: e.target.value } : member);
-                            setCouncilMembers(updated);
-                            syncToFirestore({ councilMembers: updated });
-                          }}
-                          placeholder="Ví dụ: Nguyễn Văn A"
-                          className="w-full text-xs border border-natural-border rounded-lg px-2.5 py-1.5 focus:border-natural-primary focus:outline-none bg-white text-natural-text"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-natural-text uppercase mb-1">Đơn vị công tác</label>
-                        <input
-                          type="text"
-                          value={m.unit}
-                          onChange={(e) => {
-                            const updated = councilMembers.map(member => member.id === m.id ? { ...member, unit: e.target.value } : member);
-                            setCouncilMembers(updated);
-                            syncToFirestore({ councilMembers: updated });
-                          }}
-                          placeholder="Ví dụ: Trường Tiểu học Phù Lưu"
-                          className="w-full text-xs border border-natural-border rounded-lg px-2.5 py-1.5 focus:border-natural-primary focus:outline-none bg-white text-natural-text"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-natural-text uppercase mb-1">Chức vụ</label>
-                        <input
-                          type="text"
-                          value={m.role}
-                          onChange={(e) => {
-                            const updated = councilMembers.map(member => member.id === m.id ? { ...member, role: e.target.value } : member);
-                            setCouncilMembers(updated);
-                            syncToFirestore({ councilMembers: updated });
-                          }}
-                          placeholder="Ví dụ: Tổ trưởng chuyên môn"
-                          className="w-full text-xs border border-natural-border rounded-lg px-2.5 py-1.5 focus:border-natural-primary focus:outline-none bg-white text-natural-text"
-                        />
-                      </div>
-                    </div>
-                  ))}
                 </div>
               </div>
             </div>
@@ -2719,39 +2605,213 @@ export default function App() {
               <div className="flex-1 flex flex-col">
 
                 {/* Empty Fallbacks for specific tabs */}
-                {mainTab === 'appraisal' && !currentResult && (
-                  <div className="flex-1 p-10 flex flex-col items-center justify-center gap-4">
-                    <div className="text-sm font-medium text-natural-muted text-center italic">
-                      Chưa có kết quả Thẩm định điểm cho tệp này.
-                    </div>
-                    
-                    <div className="flex flex-col items-center gap-2 mb-2">
-                       <label className="text-[10px] font-bold text-natural-muted uppercase tracking-wider">Mô hình AI sử dụng:</label>
-                       <select
-                          value={selectedModelAppraisal}
-                          onChange={(e) => setSelectedModelAppraisal(e.target.value)}
-                          className="text-xs font-semibold bg-white border border-amber-300 text-amber-900 rounded-lg px-3 py-1.5 outline-none w-[220px] shadow-sm"
-                        >
-                          <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Mạnh mẽ nhất)</option>
-                          <option value="gemini-pro">Gemini Pro Latest</option>
-                          <option value="gemini-3.5-flash">Gemini 3.5 Flash (Cân bằng, Rất ổn định)</option>
-                          <option value="gemini-3.0-flash-preview">Gemini 3 Flash Preview (Thử nghiệm)</option>
-                          <option value="gemini-flash">Gemini Flash Latest</option>
-                          <option value="gemini-2.5-flash">Gemini 2.5 Flash (Thế hệ trước)</option>
-                          <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Nhanh nhất, Khuyên dùng)</option>
-                        </select>
-                    </div>
+                {mainTab === 'appraisal' && !currentResult && (() => {
+                  const isCouncil = activeAppraisalView === 'council';
+                  const isReviewerNameEmpty = !reviewerName || !reviewerName.trim();
 
-                    <button
-                      type="button"
-                      onClick={handleStartAppraisalOnly}
-                      disabled={isLoading || (!plagFileBase64 && initiativeText.length < 30)}
-                      className="min-w-[200px] border border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-bold uppercase tracking-wider py-3 px-6 rounded-xl transition flex justify-center items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-sm"
-                    >
-                      <Sparkles className="w-4 h-4" /> Bắt đầu Thẩm định (Chấm điểm)
-                    </button>
-                  </div>
-                )}
+                  return (
+                    <div className="flex-1 p-6 md:p-10 flex flex-col items-center justify-start gap-4 overflow-y-auto max-h-[85vh]">
+                      {/* Segmented Control Switcher */}
+                      <div className="flex bg-[#f3f1e8] p-1 rounded-xl gap-1 max-w-sm w-full border border-natural-border/30 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setActiveAppraisalView('department')}
+                          className={`flex-1 py-1.5 px-3 text-xs font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 ${!isCouncil ? 'bg-natural-primary text-white shadow-sm' : 'text-natural-muted hover:text-natural-text hover:bg-natural-accent/50'}`}
+                        >
+                          Sơ bộ (Phòng VH-XH)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveAppraisalView('council')}
+                          className={`flex-1 py-1.5 px-3 text-xs font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 ${isCouncil ? 'bg-amber-700 text-white shadow-sm' : 'text-natural-muted hover:text-natural-text hover:bg-natural-accent/50'}`}
+                        >
+                          Hội đồng Thẩm định
+                        </button>
+                      </div>
+
+                      <div className="text-sm font-medium text-natural-muted text-center italic mb-2">
+                        Chưa có kết quả Thẩm định điểm cho tệp này.
+                      </div>
+
+                      {!isCouncil ? (
+                        /* SƠ BỘ VIEW */
+                        <div className="w-full max-w-md bg-white p-5 rounded-2xl border border-natural-border/60 shadow-sm space-y-4 mb-2 text-left">
+                          <div className="text-center">
+                            <h4 className="text-xs font-bold text-natural-primary uppercase tracking-wider">Thông tin Giám khảo Sơ bộ</h4>
+                            <p className="text-[11px] text-natural-muted mt-1">Họ và tên Giám khảo / Người nhận xét chấm điểm Sơ bộ.</p>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-natural-text uppercase mb-1">Tên Giám khảo / Người nhận xét</label>
+                            <input
+                              type="text"
+                              value={reviewerName}
+                              onChange={(e) => {
+                                setReviewerName(e.target.value);
+                                syncToFirestore({ reviewerName: e.target.value });
+                              }}
+                              placeholder="Nhập tên Giám khảo chấm..."
+                              className="w-full text-xs border border-natural-border rounded-lg px-3 py-2 focus:border-natural-primary focus:outline-none bg-[#fffefc] text-natural-text font-medium"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        /* HỘI ĐỒNG VIEW */
+                        <div className="w-full max-w-2xl bg-white p-5 rounded-2xl border border-natural-border/60 shadow-sm space-y-4 mb-2 text-left">
+                          <div className="text-center">
+                            <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wider">Thông tin Hội đồng Thẩm định</h4>
+                            <p className="text-[11px] text-natural-muted mt-1">Cấu hình danh sách thành viên Hội đồng thẩm định cấp xã.</p>
+                          </div>
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-[10px] font-bold text-natural-text uppercase mb-1">
+                                Hội đồng / Tổ thẩm định nào (Ví dụ: CỦA THÀNH VIÊN TỔ THẨM ĐỊNH SÁNG KIẾN)
+                              </label>
+                              <input
+                                type="text"
+                                value={councilName}
+                                onChange={(e) => {
+                                  setCouncilName(e.target.value);
+                                  syncToFirestore({ councilName: e.target.value });
+                                }}
+                                placeholder="Nhập tên hội đồng hoặc tổ thẩm định..."
+                                className="w-full text-xs border border-natural-border rounded-lg px-3 py-2 focus:border-natural-primary focus:outline-none bg-[#fffefc] text-natural-text font-medium"
+                              />
+                            </div>
+
+                            <div className="border-t border-natural-border/60 pt-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-[10px] font-bold text-amber-900 uppercase">Danh sách thành viên ({councilMembers.length})</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const newId = 'member_' + Date.now();
+                                    const updated = [...councilMembers, { id: newId, name: '', unit: '', role: '' }];
+                                    setCouncilMembers(updated);
+                                    syncToFirestore({ councilMembers: updated });
+                                  }}
+                                  className="flex items-center gap-1 text-[10px] font-bold text-amber-700 hover:text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                                >
+                                  <Plus className="w-3 h-3" /> Thêm thành viên
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 max-h-60 overflow-y-auto p-1">
+                                {councilMembers.map((m, index) => (
+                                  <div key={m.id || index} className="bg-[#faf9f5] p-3 rounded-xl border border-natural-border/60 space-y-2 relative">
+                                    <div className="flex items-center justify-between border-b border-natural-border pb-1">
+                                      <span className="text-[10px] font-bold text-amber-900">Thành viên {index + 1}</span>
+                                      {councilMembers.length > 1 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const updated = councilMembers.filter(member => member.id !== m.id);
+                                            setCouncilMembers(updated);
+                                            syncToFirestore({ councilMembers: updated });
+                                          }}
+                                          className="text-red-500 hover:text-red-700 transition p-0.5 rounded hover:bg-red-50"
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <label className="block text-[9px] font-bold text-natural-text uppercase mb-0.5">Họ và tên</label>
+                                      <input
+                                        type="text"
+                                        value={m.name}
+                                        onChange={(e) => {
+                                          const updated = councilMembers.map(member => member.id === m.id ? { ...member, name: e.target.value } : member);
+                                          setCouncilMembers(updated);
+                                          syncToFirestore({ councilMembers: updated });
+                                        }}
+                                        placeholder="Ví dụ: Nguyễn Văn A"
+                                        className="w-full text-[11px] border border-natural-border rounded px-2 py-1 focus:border-natural-primary focus:outline-none bg-white text-natural-text font-semibold"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[9px] font-bold text-natural-text uppercase mb-0.5">Đơn vị công tác</label>
+                                      <input
+                                        type="text"
+                                        value={m.unit}
+                                        onChange={(e) => {
+                                          const updated = councilMembers.map(member => member.id === m.id ? { ...member, unit: e.target.value } : member);
+                                          setCouncilMembers(updated);
+                                          syncToFirestore({ councilMembers: updated });
+                                        }}
+                                        placeholder="Trường TH..."
+                                        className="w-full text-[11px] border border-natural-border rounded px-2 py-1 focus:border-natural-primary focus:outline-none bg-white text-natural-text"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[9px] font-bold text-natural-text uppercase mb-0.5">Chức vụ</label>
+                                      <input
+                                        type="text"
+                                        value={m.role}
+                                        onChange={(e) => {
+                                          const updated = councilMembers.map(member => member.id === m.id ? { ...member, role: e.target.value } : member);
+                                          setCouncilMembers(updated);
+                                          syncToFirestore({ councilMembers: updated });
+                                        }}
+                                        placeholder="Ủy viên..."
+                                        className="w-full text-[11px] border border-natural-border rounded px-2 py-1 focus:border-natural-primary focus:outline-none bg-white text-natural-text"
+                                      />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-[11px] text-amber-900 leading-relaxed font-semibold">
+                            💡 Vui lòng hoàn thành Thẩm định Sơ bộ (Phòng VH-XH) trước để có kết quả cơ sở. Khi có kết quả Sơ bộ, bạn sẽ có thể kích hoạt Thẩm định Hội đồng độc lập.
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col items-center gap-2 mb-2 shrink-0">
+                         <label className="text-[10px] font-bold text-natural-muted uppercase tracking-wider">Mô hình AI sử dụng:</label>
+                         <select
+                            value={selectedModelAppraisal}
+                            onChange={(e) => setSelectedModelAppraisal(e.target.value)}
+                            className="text-xs font-semibold bg-white border border-amber-300 text-amber-900 rounded-lg px-3 py-1.5 outline-none w-[220px] shadow-sm cursor-pointer"
+                          >
+                            <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Mạnh mẽ nhất)</option>
+                            <option value="gemini-pro">Gemini Pro Latest</option>
+                            <option value="gemini-3.5-flash">Gemini 3.5 Flash (Cân bằng, Rất ổn định)</option>
+                            <option value="gemini-3.0-flash-preview">Gemini 3 Flash Preview (Thử nghiệm)</option>
+                            <option value="gemini-flash">Gemini Flash Latest</option>
+                            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Thế hệ trước)</option>
+                            <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Nhanh nhất, Khuyên dùng)</option>
+                          </select>
+                      </div>
+
+                      {!isCouncil ? (
+                        <div className="flex flex-col items-center gap-2 shrink-0">
+                          {isReviewerNameEmpty && (
+                            <p className="text-red-500 text-[11px] font-semibold text-center animate-pulse">
+                              ⚠️ Yêu cầu nhập tên Giám khảo / Người nhận xét trước khi bắt đầu chấm Sơ bộ.
+                            </p>
+                          )}
+                          <button
+                            type="button"
+                            onClick={handleStartAppraisalOnly}
+                            disabled={isLoading || isReviewerNameEmpty || (!plagFileBase64 && initiativeText.length < 30)}
+                            className="min-w-[220px] border border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-bold uppercase tracking-wider py-3 px-6 rounded-xl transition flex justify-center items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-sm"
+                          >
+                            <Sparkles className="w-4 h-4" /> Bắt đầu Thẩm định Sơ bộ
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setActiveAppraisalView('department')}
+                          className="min-w-[220px] border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold uppercase tracking-wider py-3 px-6 rounded-xl transition flex justify-center items-center gap-1.5 cursor-pointer shadow-sm shrink-0"
+                        >
+                          <ChevronRight className="w-4 h-4 rotate-180" /> Quay lại Thẩm định Sơ bộ
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
                 {mainTab === 'plagiarism' && (
                   <div className="flex-1 flex flex-col md:flex-row min-h-[750px] h-[calc(100vh-200px)]">
                     {/* Left Pane: PDF / Document Viewer */}
@@ -3342,6 +3402,134 @@ export default function App() {
                         {isCouncilView && hasCouncilResult && (
                           <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900 font-semibold flex items-center gap-1.5">
                             <Award className="w-4 h-4 text-amber-700" /> Kết quả chấm điểm và đánh giá độc lập của Hội đồng Thẩm định Sáng kiến xã Hàm Yên.
+                          </div>
+                        )}
+
+                        {!isCouncilView && (
+                          <div className="mt-3 bg-white p-3 rounded-xl border border-natural-border/60 flex flex-col sm:flex-row sm:items-center gap-3 text-left">
+                            <div className="shrink-0 flex items-center gap-1.5 text-xs font-bold text-natural-text uppercase">
+                              <User className="w-4 h-4 text-natural-primary" /> Người thẩm định Sơ bộ:
+                            </div>
+                            <input
+                              type="text"
+                              value={reviewerName}
+                              onChange={(e) => {
+                                setReviewerName(e.target.value);
+                                syncToFirestore({ reviewerName: e.target.value });
+                              }}
+                              placeholder="Nhập tên Giám khảo / Người nhận xét..."
+                              className={`flex-1 text-xs border rounded-lg px-3 py-1.5 focus:border-natural-primary focus:outline-none bg-[#fffefc] font-bold ${
+                                !reviewerName || !reviewerName.trim() ? 'border-red-400 focus:ring-1 focus:ring-red-400 animate-pulse' : 'border-natural-border'
+                              }`}
+                            />
+                            {(!reviewerName || !reviewerName.trim()) && (
+                              <span className="text-[10px] text-red-500 font-bold">⚠️ Vui lòng nhập tên người nhận xét</span>
+                            )}
+                          </div>
+                        )}
+
+                        {isCouncilView && (
+                          <div className="mt-3 bg-amber-50/40 p-4 rounded-xl border border-amber-200/50 space-y-3 text-left">
+                            <div className="flex items-center justify-between border-b border-amber-200/50 pb-2">
+                              <span className="text-xs font-extrabold text-amber-950 uppercase flex items-center gap-1.5">
+                                <Award className="w-4 h-4 text-amber-700" /> Cấu hình Hội đồng Thẩm định
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newId = 'member_' + Date.now();
+                                  const updated = [...councilMembers, { id: newId, name: '', unit: '', role: '' }];
+                                  setCouncilMembers(updated);
+                                  syncToFirestore({ councilMembers: updated });
+                                }}
+                                className="flex items-center gap-1 text-[10px] font-bold text-amber-700 hover:text-amber-800 bg-white border border-amber-200 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                              >
+                                <Plus className="w-3.5 h-3.5" /> Thêm thành viên
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div className="md:col-span-3">
+                                <label className="block text-[10px] font-bold text-natural-text uppercase mb-1">
+                                  Hội đồng / Tổ thẩm định nào (Ví dụ: CỦA THÀNH VIÊN TỔ THẨM ĐỊNH SÁNG KIẾN)
+                                </label>
+                                <input
+                                  type="text"
+                                  value={councilName}
+                                  onChange={(e) => {
+                                    setCouncilName(e.target.value);
+                                    syncToFirestore({ councilName: e.target.value });
+                                  }}
+                                  placeholder="Nhập tên hội đồng hoặc tổ thẩm định..."
+                                  className="w-full text-xs border border-natural-border rounded-lg px-3 py-1.5 focus:border-amber-500 focus:outline-none bg-white text-natural-text font-bold"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-48 overflow-y-auto pr-1">
+                              {councilMembers.map((m, index) => (
+                                <div key={m.id || index} className="bg-white p-3 rounded-lg border border-natural-border/60 space-y-2 shadow-sm relative">
+                                  <div className="flex items-center justify-between border-b border-natural-border pb-1">
+                                    <span className="text-[10px] font-bold text-amber-900">Thành viên {index + 1}</span>
+                                    {councilMembers.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updated = councilMembers.filter(member => member.id !== m.id);
+                                          setCouncilMembers(updated);
+                                          syncToFirestore({ councilMembers: updated });
+                                        }}
+                                        className="text-red-500 hover:text-red-700 transition p-0.5 rounded hover:bg-red-50"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <label className="block text-[9px] font-bold text-natural-text uppercase mb-0.5">Họ và tên</label>
+                                    <input
+                                      type="text"
+                                      value={m.name}
+                                      onChange={(e) => {
+                                        const updated = councilMembers.map(member => member.id === m.id ? { ...member, name: e.target.value } : member);
+                                        setCouncilMembers(updated);
+                                        syncToFirestore({ councilMembers: updated });
+                                      }}
+                                      placeholder="Họ và tên..."
+                                      className="w-full text-[11px] border border-natural-border rounded px-2 py-1 focus:border-amber-500 focus:outline-none bg-white text-natural-text font-medium"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[9px] font-bold text-natural-text uppercase mb-0.5">Đơn vị công tác</label>
+                                    <input
+                                      type="text"
+                                      value={m.unit}
+                                      onChange={(e) => {
+                                        const updated = councilMembers.map(member => member.id === m.id ? { ...member, unit: e.target.value } : member);
+                                        setCouncilMembers(updated);
+                                        syncToFirestore({ councilMembers: updated });
+                                      }}
+                                      placeholder="Trường..."
+                                      className="w-full text-[11px] border border-natural-border rounded px-2 py-1 focus:border-amber-500 focus:outline-none bg-white text-natural-text"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[9px] font-bold text-natural-text uppercase mb-0.5">Chức vụ</label>
+                                    <input
+                                      type="text"
+                                      value={m.role}
+                                      onChange={(e) => {
+                                        const updated = councilMembers.map(member => member.id === m.id ? { ...member, role: e.target.value } : member);
+                                        setCouncilMembers(updated);
+                                        syncToFirestore({ councilMembers: updated });
+                                      }}
+                                      placeholder="Ủy viên..."
+                                      className="w-full text-[11px] border border-natural-border rounded px-2 py-1 focus:border-amber-500 focus:outline-none bg-white text-natural-text"
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>
