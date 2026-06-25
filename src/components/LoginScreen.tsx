@@ -21,7 +21,6 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     return '';
   });
   const [rememberMe, setRememberMe] = useState(false);
-  const [isRegistering, setIsRegistering] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -37,17 +36,8 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     }
 
     try {
-      if (isRegistering) {
-        sessionStorage.setItem('loginMessage', 'Đăng ký thành công! Vui lòng đăng nhập.');
-        await createUserWithEmailAndPassword(auth, loginEmail, password);
-        await signOut(auth);
-        setMessage('Đăng ký thành công! Vui lòng đăng nhập.');
-        setIsRegistering(false);
-        setPassword('');
-      } else {
-        await signInWithEmailAndPassword(auth, loginEmail, password);
-        onLogin();
-      }
+      await signInWithEmailAndPassword(auth, loginEmail, password);
+      onLogin();
     } catch (err: any) {
       sessionStorage.removeItem('loginMessage');
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-login-credentials') {
@@ -75,17 +65,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   };
 
   const handleGoogleLogin = async () => {
-    setError('');
-    setMessage('');
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-      onLogin();
-    } catch (err: any) {
-      if (err.code !== 'auth/popup-closed-by-user') {
-        setError('Lỗi đăng nhập Google, vui lòng thử lại');
-      }
-    }
+    setError('Đăng nhập bằng Google hiện đã bị khóa. Vui lòng liên hệ Admin để nhận tài khoản sử dụng.');
   };
 
   const handleForgotPassword = async (e: React.MouseEvent) => {
@@ -126,9 +106,9 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 sm:p-8">
         <h1 className="text-2xl font-bold text-center text-slate-900 mb-6">
-          {isRegistering ? 'Đăng Ký Tài Khoản' : 'Đăng Nhập'}
+          Đăng Nhập
         </h1>
         
         <form onSubmit={handleLogin} className="space-y-4">
@@ -177,20 +157,18 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             <p className="text-sm text-emerald-600 font-medium bg-emerald-50 p-3 rounded-lg border border-emerald-100">{message}</p>
           )}
 
-          {!isRegistering && (
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="remember"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
-              />
-              <label htmlFor="remember" className="text-sm font-bold text-slate-700 cursor-pointer select-none">
-                Nhớ tài khoản và mật khẩu
-              </label>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="remember"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+            />
+            <label htmlFor="remember" className="text-sm font-bold text-slate-700 cursor-pointer select-none">
+              Nhớ tài khoản và mật khẩu
+            </label>
+          </div>
 
           <button
             type="submit"
@@ -198,16 +176,14 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors shadow-sm flex justify-center items-center gap-2 disabled:opacity-70"
           >
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-            {isRegistering ? 'Đăng Ký' : 'Đăng Nhập'}
+            Đăng Nhập
           </button>
 
-          {!isRegistering && (
-            <div className="text-center mt-2">
-              <a href="#" onClick={handleForgotPassword} className="text-sm text-blue-600 font-medium hover:underline">
-                Quên mật khẩu?
-              </a>
-            </div>
-          )}
+          <div className="text-center mt-2">
+            <a href="#" onClick={handleForgotPassword} className="text-sm text-blue-600 font-medium hover:underline">
+              Quên mật khẩu?
+            </a>
+          </div>
 
           <div className="relative flex items-center py-1">
             <div className="flex-grow border-t border-slate-200"></div>
@@ -229,20 +205,10 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             Google
           </button>
 
-          <div className="text-center">
-            <span className="text-slate-500 text-sm">
-              {isRegistering ? 'Đã có tài khoản? ' : 'Chưa có tài khoản? '}
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setIsRegistering(!isRegistering);
-                setError('');
-              }}
-              className="text-blue-600 text-sm font-bold hover:underline"
-            >
-              {isRegistering ? 'Đăng nhập ngay' : 'Đăng ký ngay'}
-            </button>
+          <div className="text-center mt-2 p-3 bg-orange-50 border border-orange-100 rounded-lg text-orange-800">
+            <p className="font-bold mb-1 text-xs sm:text-sm">Bạn chưa có tài khoản?</p>
+            <p className="font-medium mb-1 text-[11px] sm:text-xs leading-normal">Vui lòng liên hệ Admin để được cấp tài khoản sử dụng.</p>
+            <p className="font-medium text-[11px] sm:text-xs">Phone: 0989982818 - Zalo: 0978468986</p>
           </div>
         </form>
       </div>

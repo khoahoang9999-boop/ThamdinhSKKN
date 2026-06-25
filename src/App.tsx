@@ -41,12 +41,15 @@ import {
   Loader2,
   Settings,
   LogOut,
-  Link
+  Link,
+  HelpCircle,
+  Download
 } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { PlagiarismResult, PlagiarismSource, PlagiarismSegment, EvaluationResult, TeacherInfo } from './types';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+import { asBlob } from 'html-docx-js-typescript';
 import { HighlightedText } from './components/HighlightedText';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -216,7 +219,7 @@ export default function App() {
   const [reviewerName, setReviewerName] = useState('');
 
   // Plagiarism & Duplicate Checker states
-  const [mainTab, setMainTab] = useState<'info' | 'plagiarism' | 'appraisal' | 'settings'>('info');
+  const [mainTab, setMainTab] = useState<'guide' | 'info' | 'plagiarism' | 'appraisal' | 'settings'>('info');
   const [activeTab, setActiveTab] = useState<'evaluate' | 'plagiarism'>('evaluate');
   const [plagText, setPlagText] = useState('');
   const [plagFileBase64, setPlagFileBase64] = useState('');
@@ -1093,6 +1096,12 @@ export default function App() {
 
         <div className="flex border-b border-natural-border gap-2 overflow-x-auto custom-scrollbar">
            <button 
+             onClick={() => setMainTab('guide')}
+             className={`px-4 py-3 font-bold uppercase tracking-wider text-[13px] border-b-2 transition whitespace-nowrap flex items-center gap-2 ${mainTab === 'guide' ? 'border-natural-primary text-natural-primary bg-natural-primary/5' : 'border-transparent text-natural-muted hover:text-natural-text hover:bg-natural-accent/50'}`}
+           >
+             <HelpCircle className="w-4 h-4" /> Hướng dẫn
+           </button>
+           <button 
              onClick={() => setMainTab('info')}
              className={`px-4 py-3 font-bold uppercase tracking-wider text-[13px] border-b-2 transition whitespace-nowrap flex items-center gap-2 ${mainTab === 'info' ? 'border-natural-primary text-natural-primary bg-natural-primary/5' : 'border-transparent text-natural-muted hover:text-natural-text hover:bg-natural-accent/50'}`}
            >
@@ -1124,6 +1133,130 @@ export default function App() {
             <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
             <div>{errorMsg}</div>
           </div>
+        )}
+
+        {mainTab === 'guide' && (
+        <section id="guide-section" className="w-full max-w-4xl mx-auto flex flex-col gap-6">
+          <div className="bg-white rounded-2xl border border-natural-border shadow-sm overflow-hidden">
+            <div className="bg-natural-accent border-b border-natural-border px-5 py-3.5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-natural-primary" />
+                <h2 className="font-bold text-natural-primary text-sm md:text-base">Hướng dẫn sử dụng Hệ thống Thẩm định SKKN</h2>
+              </div>
+              <button
+                onClick={async () => {
+                  const htmlContent = `
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                      <meta charset='utf-8'>
+                      <title>Hướng dẫn sử dụng Hệ thống Thẩm định SKKN</title>
+                      <style>
+                        body { font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.5; }
+                        h2 { font-size: 18pt; text-align: center; color: #000; font-weight: bold; margin-bottom: 20pt; }
+                        h3 { font-size: 14pt; color: #000; font-weight: bold; margin-top: 16pt; margin-bottom: 8pt; }
+                        p.step-desc { margin-left: 20pt; margin-top: 0; margin-bottom: 4pt; }
+                        .highlight { color: red; font-weight: bold; }
+                        .step { font-weight: bold; }
+                      </style>
+                    </head>
+                    <body>
+                      <h2>HƯỚNG DẪN SỬ DỤNG HỆ THỐNG THẨM ĐỊNH SKKN</h2>
+                      
+                      <h3>Bước 1: Cấu hình API Key (Bắt buộc)</h3>
+                      <p class="step-desc"><span class="step">B1:</span> Chuyển sang thẻ <span class="highlight">"Cài đặt API & Hệ thống"</span> ở thanh menu.</p>
+                      <p class="step-desc"><span class="step">B2:</span> <span class="highlight">Nhập Key API</span> vào ô tương ứng. Nếu chưa nhập, AI sẽ <span class="highlight">không thể hoạt động</span> (báo lỗi).</p>
+                      <p class="step-desc"><span class="step">B3:</span> Nhấn <span class="highlight">"Lưu cấu hình"</span>.</p>
+
+                      <h3>Bước 2: Tải lên Sáng kiến & Nhập thông tin giám khảo</h3>
+                      <p class="step-desc"><span class="step">B1:</span> Tại thẻ <strong>"1. Hồ sơ Sáng kiến"</strong>, <span class="highlight">tải file Sáng kiến lên</span> (hỗ trợ .PDF, .TXT) hoặc dán nội dung.</p>
+                      <p class="step-desc"><span class="step">B2:</span> <span class="highlight">Chờ AI tự động trích xuất</span> và điền đầy đủ các thông tin tác giả.</p>
+                      <p class="step-desc"><span class="step">B3:</span> <span class="highlight">Nhập Tên Giám khảo / Người nhận xét</span> ở bên cột thông tin.</p>
+                      <p class="step-desc"><span class="step">B4:</span> Nhấn <span class="highlight">"Tiếp tục: 2. Đạo văn, Chính tả & Sử dụng AI"</span> để chuyển sang bước 2.</p>
+
+                      <h3>Bước 3: Kiểm tra Đạo văn & Lỗi kỹ thuật</h3>
+                      <p class="step-desc"><span class="step">B1:</span> Chuyển sang thẻ <span class="highlight">"2. Đạo văn, Chính tả & Sử dụng AI"</span>.</p>
+                      <p class="step-desc"><span class="step">B2:</span> Nhấn nút <span class="highlight">"Bắt đầu quét"</span> để hệ thống phân tích.</p>
+                      <p class="step-desc"><span class="step">B3:</span> <span class="highlight">Xem kết quả đánh giá:</span> Tỷ lệ đạo văn, Dấu hiệu AI sinh, và Lỗi chính tả.</p>
+                      <p class="step-desc"><span class="step">B4:</span> Nhấn <span class="highlight">"Tiếp tục: 3. Thẩm định (Chấm điểm)"</span> để sang bước 3.</p>
+
+                      <h3>Bước 4: Thẩm định (Chấm điểm) & Sinh nhận xét</h3>
+                      <p class="step-desc"><span class="step">B1:</span> Chuyển sang thẻ <span class="highlight">"3. Thẩm định & Xuất phiếu"</span>.</p>
+                      <p class="step-desc"><span class="step">B2:</span> Nhấn nút <span class="highlight">"Bắt đầu Thẩm định (Chấm điểm)"</span>.</p>
+                      <p class="step-desc"><span class="step">B3:</span> <span class="highlight">Chờ hệ thống AI đóng vai trò Hội đồng</span> đọc toàn bộ nội dung, chấm điểm chi tiết và viết nhận xét ưu/nhược điểm.</p>
+
+                      <h3>Bước 5: Chỉnh sửa & Xuất phiếu kết quả</h3>
+                      <p class="step-desc"><span class="step">B1:</span> <span class="highlight">Kiểm tra và tự do chỉnh sửa</span> mọi thông tin trên phiếu (nhận xét, điểm số, thông tin).</p>
+                      <p class="step-desc"><span class="step">B2:</span> Kéo xuống cuối trang, chọn <span class="highlight">"In Phiếu Thẩm định (PDF)"</span> để tải bản báo cáo về.</p>
+                      <p class="step-desc"><span class="step">B3:</span> Hoặc chọn <span class="highlight">"Tải Danh sách Excel"</span> / <span class="highlight">"Lưu file JSON"</span> để lưu trữ kết quả đánh giá.</p>
+                    </body>
+                    </html>
+                  `;
+                  try {
+                    const docxBlob = await asBlob(htmlContent);
+                    saveAs(docxBlob as Blob, 'Huong_dan_su_dung_tham_dinh_SKKN.docx');
+                  } catch (err) {
+                    console.error('Lỗi khi tải file docx:', err);
+                    // Fallback to older doc export if something fails
+                    const blob = new Blob(['\ufeff' + htmlContent], { type: 'application/msword' });
+                    saveAs(blob, 'Huong_dan_su_dung_tham_dinh_SKKN.docx');
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white text-natural-primary border border-natural-primary/30 rounded-lg shadow-sm hover:bg-natural-primary hover:text-white transition-colors"
+              >
+                <Download className="w-4 h-4" /> Tải về (.docx)
+              </button>
+            </div>
+            <div className="p-6 flex flex-col gap-6 text-sm text-natural-text leading-relaxed">
+              <div className="flex flex-col gap-2">
+                <h3 className="font-bold text-natural-primary text-base flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-natural-primary text-white flex items-center justify-center text-xs">1</div> Bước 1: Cấu hình API Key (Bắt buộc)</h3>
+                <ul className="list-none pl-8 flex flex-col gap-1">
+                  <li>B1: Chuyển sang thẻ <strong className="text-red-600">"Cài đặt API & Hệ thống"</strong> ở thanh menu.</li>
+                  <li>B2: <strong className="text-red-600">Nhập Key API</strong> vào ô tương ứng. Nếu chưa nhập, AI sẽ <strong className="text-red-600">không thể hoạt động</strong> (báo lỗi).</li>
+                  <li>B3: Nhấn <strong className="text-red-600">"Lưu cấu hình"</strong>.</li>
+                </ul>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <h3 className="font-bold text-natural-primary text-base flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-natural-primary text-white flex items-center justify-center text-xs">2</div> Bước 2: Tải lên Sáng kiến & Nhập thông tin giám khảo</h3>
+                <ul className="list-none pl-8 flex flex-col gap-1">
+                  <li>B1: Tại thẻ <strong>"1. Hồ sơ Sáng kiến"</strong>, <strong className="text-red-600">tải file Sáng kiến lên</strong> (hỗ trợ .PDF, .TXT) hoặc dán nội dung.</li>
+                  <li>B2: <strong className="text-red-600">Chờ AI tự động trích xuất</strong> và điền đầy đủ các thông tin tác giả.</li>
+                  <li>B3: <strong className="text-red-600">Nhập Tên Giám khảo / Người nhận xét</strong> ở bên cột thông tin.</li>
+                  <li>B4: Nhấn <strong className="text-red-600">"Tiếp tục: 2. Đạo văn, Chính tả & Sử dụng AI"</strong> để chuyển sang bước 2.</li>
+                </ul>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <h3 className="font-bold text-natural-primary text-base flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-natural-primary text-white flex items-center justify-center text-xs">3</div> Bước 3: Kiểm tra Đạo văn & Lỗi kỹ thuật</h3>
+                <ul className="list-none pl-8 flex flex-col gap-1">
+                  <li>B1: Chuyển sang thẻ <strong className="text-red-600">"2. Đạo văn, Chính tả & Sử dụng AI"</strong>.</li>
+                  <li>B2: Nhấn nút <strong className="text-red-600">"Bắt đầu quét"</strong> để hệ thống phân tích.</li>
+                  <li>B3: <strong className="text-red-600">Xem kết quả đánh giá:</strong> Tỷ lệ đạo văn, Dấu hiệu AI sinh, và Lỗi chính tả.</li>
+                  <li>B4: Nhấn <strong className="text-red-600">"Tiếp tục: 3. Thẩm định (Chấm điểm)"</strong> để sang bước 3.</li>
+                </ul>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <h3 className="font-bold text-natural-primary text-base flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-natural-primary text-white flex items-center justify-center text-xs">4</div> Bước 4: Thẩm định (Chấm điểm) & Sinh nhận xét</h3>
+                <ul className="list-none pl-8 flex flex-col gap-1">
+                  <li>B1: Chuyển sang thẻ <strong className="text-red-600">"3. Thẩm định & Xuất phiếu"</strong>.</li>
+                  <li>B2: Nhấn nút <strong className="text-red-600">"Bắt đầu Thẩm định (Chấm điểm)"</strong>.</li>
+                  <li>B3: <strong className="text-red-600">Chờ hệ thống AI đóng vai trò Hội đồng</strong> đọc toàn bộ nội dung, chấm điểm chi tiết và viết nhận xét ưu/nhược điểm.</li>
+                </ul>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <h3 className="font-bold text-natural-primary text-base flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-natural-primary text-white flex items-center justify-center text-xs">5</div> Bước 5: Chỉnh sửa & Xuất phiếu kết quả</h3>
+                <ul className="list-none pl-8 flex flex-col gap-1">
+                  <li>B1: <strong className="text-red-600">Kiểm tra và tự do chỉnh sửa</strong> mọi thông tin trên phiếu (nhận xét, điểm số, thông tin).</li>
+                  <li>B2: Kéo xuống cuối trang, chọn <strong className="text-red-600">"In Phiếu Thẩm định (PDF)"</strong> để tải bản báo cáo về.</li>
+                  <li>B3: Hoặc chọn <strong className="text-red-600">"Tải Danh sách Excel"</strong> / <strong className="text-red-600">"Lưu file JSON"</strong> để lưu trữ kết quả đánh giá.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
         )}
 
         {mainTab === 'info' && (
