@@ -23,6 +23,9 @@ import {
   History, 
   ChevronRight, 
   ArrowUpRight, 
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   GraduationCap, 
   RefreshCw, 
   Bookmark, 
@@ -46,10 +49,14 @@ import {
   LogOut,
   Link,
   HelpCircle,
-  Download
+  Download,
+  UploadCloud,
+  Play,
+  Upload,
+  FileCheck
 } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
-import { PlagiarismResult, PlagiarismSource, PlagiarismSegment, EvaluationResult, TeacherInfo, CouncilMember, CouncilEvaluationResult } from './types';
+import { PlagiarismResult, PlagiarismSource, PlagiarismSegment, EvaluationResult, TeacherInfo, CouncilMember, CouncilEvaluationResult, WarehouseInitiative } from './types';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { asBlob } from 'html-docx-js-typescript';
@@ -61,7 +68,7 @@ import LoginScreen from './components/LoginScreen';
 import { auth, db } from './lib/firebase';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
 
 // Setup PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -123,12 +130,23 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   
   const [user, loadingAuth] = useAuthState(auth);
   
   // Evaluation History
   const [history, setHistory] = useState<EvaluationResult[]>([]);
   const [currentResult, setCurrentResult] = useState<EvaluationResult | null>(null);
+  
+  // Warehouse (Kho lưu file sáng kiến) States
+  const [warehouseInitiatives, setWarehouseInitiatives] = useState<WarehouseInitiative[]>([]);
+  const [isBulkUploading, setIsBulkUploading] = useState(false);
+  const [bulkUploadFiles, setBulkUploadFiles] = useState<{ name: string; size: number; status: 'pending' | 'reading' | 'extracting' | 'completed' | 'failed'; error?: string; progress: number }[]>([]);
+  const [selectedWarehouseIds, setSelectedWarehouseIds] = useState<string[]>([]);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isBulkDeleteConfirm, setIsBulkDeleteConfirm] = useState(false);
+  const [warehouseSortField, setWarehouseSortField] = useState<'uploadedAt' | 'initiativeTitle' | 'teacherName' | 'schoolName' | 'status'>('uploadedAt');
+  const [warehouseSortDirection, setWarehouseSortDirection] = useState<'asc' | 'desc'>('desc');
   
   // Re-evaluation / Re-grading panel states
   const [showReAppraisalPanel, setShowReAppraisalPanel] = useState(false);
@@ -519,7 +537,7 @@ export default function App() {
   const [reviewerName, setReviewerName] = useState('');
 
   // Plagiarism & Duplicate Checker states
-  const [mainTab, setMainTab] = useState<'guide' | 'info' | 'plagiarism' | 'appraisal' | 'settings'>('info');
+  const [mainTab, setMainTab] = useState<'guide' | 'info' | 'plagiarism' | 'appraisal' | 'repository' | 'settings'>('info');
   const [activeTab, setActiveTab] = useState<'evaluate' | 'plagiarism'>('evaluate');
   const [plagText, setPlagText] = useState('');
   const [plagFileBase64, setPlagFileBase64] = useState('');
@@ -553,17 +571,53 @@ export default function App() {
         }
         
         let finalClass = baseClass;
-        const levelLower = newPlag.warningLevel.toLowerCase();
-        if (levelLower.includes('không đạt') || levelLower.includes('nghiêm trọng') || levelLower.includes('không đạt') || newPlag.totalDuplicatePercent > 30) {
+        const levelLower = (newPlag.warningLevel || '').toLowerCase();
+        const isPlagViolation = levelLower.includes('không đạt') || 
+                                levelLower.includes('nghiêm trọng') || 
+                                levelLower.includes('không đạt') || 
+                                levelLower.includes('nghiêm trọng') ||
+                                (newPlag.totalDuplicatePercent !== undefined && newPlag.totalDuplicatePercent > 30);
+        
+        const isAiViolation = newPlag.aiGeneratedPercent !== undefined && newPlag.aiGeneratedPercent > 10;
+
+        if (isPlagViolation) {
           finalClass = 'Không đạt (Mức độ vi phạm đạo văn quá quy định)';
-        } else if (newPlag.aiGeneratedPercent !== undefined && newPlag.aiGeneratedPercent > 10) {
+        } else if (isAiViolation) {
           finalClass = 'Không đạt (Vượt quá giới hạn nội dung AI sinh)';
+        }
+
+        let updatedCouncilResult = prev.councilResult;
+        if (updatedCouncilResult) {
+          let councilBaseClass = 'Không đạt';
+          const cTotal = updatedCouncilResult.totalScore || 0;
+          if (cTotal >= 90) {
+            councilBaseClass = 'Xuất sắc';
+          } else if (cTotal >= 80) {
+            councilBaseClass = 'Tốt';
+          } else if (cTotal >= 50) {
+            councilBaseClass = 'Khá';
+          } else {
+            councilBaseClass = 'Không đạt';
+          }
+
+          let councilFinalClass = councilBaseClass;
+          if (isPlagViolation) {
+            councilFinalClass = 'Không đạt (Mức độ vi phạm đạo văn quá quy định)';
+          } else if (isAiViolation) {
+            councilFinalClass = 'Không đạt (Vượt quá giới hạn nội dung AI sinh)';
+          }
+
+          updatedCouncilResult = {
+            ...updatedCouncilResult,
+            classification: councilFinalClass
+          };
         }
         
         const updatedRes = {
           ...prev,
           classification: finalClass,
-          plagiarismResult: newPlag
+          plagiarismResult: newPlag,
+          councilResult: updatedCouncilResult
         };
         
         // Cập nhật lịch sử đồng bộ
@@ -698,6 +752,21 @@ export default function App() {
               ]);
             }
           }
+
+          // Fetch warehouse initiatives from subcollection
+          try {
+            const colRef = collection(db, 'users', user.uid, 'warehouse');
+            const querySnapshot = await getDocs(colRef);
+            const warehouseList: WarehouseInitiative[] = [];
+            querySnapshot.forEach((docSnap) => {
+              warehouseList.push({ id: docSnap.id, ...docSnap.data() } as WarehouseInitiative);
+            });
+            // Sort by uploadedAt descending
+            warehouseList.sort((a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime());
+            setWarehouseInitiatives(warehouseList);
+          } catch (warehouseErr) {
+            console.error("Error loading warehouse initiatives:", warehouseErr);
+          }
         } catch (error) {
           console.error("Error loading user data from Firestore:", error);
         }
@@ -706,6 +775,7 @@ export default function App() {
         setHistory([]);
         setCurrentResult(null);
         setPlagResult(null);
+        setWarehouseInitiatives([]);
         setApiKeys(['']);
         setReviewerName('');
         setCouncilName('CỦA THÀNH VIÊN TỔ THẨM ĐỊNH SÁNG KIẾN');
@@ -862,74 +932,109 @@ export default function App() {
     sortedHistory.forEach((h, idx) => {
       let isPass = "";
       let isFail = "";
-      let totalScore = 0;
-      
-      totalScore = h.totalScore || 0;
+      let totalScore = h.totalScore || 0;
+      let failReason = "";
 
-      if (h.classification) {
-        if (h.classification.includes('Không đạt')) {
-          isFail = 'Không đạt';
+      // Determine classification and possible fail reason
+      const currentClass = h.classification || "";
+      if (currentClass.includes('Không đạt')) {
+        isFail = 'Không đạt';
+        const match = currentClass.match(/\(([^)]+)\)/);
+        if (match) {
+          failReason = match[1];
         } else {
-          isPass = 'Đạt';
+          failReason = "Mức độ vi phạm đạo văn hoặc vượt quá tỷ lệ AI quy định";
+        }
+      } else if (totalScore < 50) {
+        isFail = 'Không đạt';
+        failReason = "Tổng điểm dưới 50 điểm";
+      } else {
+        isPass = "Đạt";
+      }
+
+      // If isFail and no reason is extracted, check Plagiarism & AI
+      if (isFail === "Không đạt" && !failReason) {
+        if (h.plagiarismResult) {
+          const p = h.plagiarismResult;
+          if (p.totalDuplicatePercent > 30) {
+            failReason = `Tỷ lệ trùng lặp ${p.totalDuplicatePercent}% vượt quá giới hạn 30%`;
+          } else if (p.aiGeneratedPercent > 10) {
+            failReason = `Tỷ lệ nội dung AI sinh ${p.aiGeneratedPercent}% vượt quá giới hạn 10%`;
+          } else {
+            failReason = "Không đáp ứng tiêu chuẩn kỹ thuật về tính trung thực và chính tả";
+          }
+        } else {
+          failReason = "Chưa đáp ứng các tiêu chuẩn thẩm định hiện hành";
+        }
+      }
+
+      // 1. Get Ưu điểm (Strengths)
+      let uuDiemList = h.uuDiem || [];
+      if (uuDiemList.length === 0) {
+        uuDiemList = ["Nội dung có liên hệ thực tế phù hợp, trình bày theo đúng bố cục."];
+      }
+      const uuDiemStr = uuDiemList.map((u, i) => `${i + 1}. ${u}`).join('\n');
+
+      // 2. Get Nhược điểm (Weaknesses)
+      let hanCheList = h.hanChe || [];
+      if (hanCheList.length === 0) {
+        const cons: string[] = [];
+        if (h.tinhMoi?.cons) cons.push(...h.tinhMoi.cons);
+        if (h.giaiPhap?.cons) cons.push(...h.giaiPhap.cons);
+        if (h.hieuQua?.cons) cons.push(...h.hieuQua.cons);
+        if (h.khaNangApDung?.cons) cons.push(...h.khaNangApDung.cons);
+        
+        if (cons.length > 0) {
+          hanCheList = cons;
+        } else {
+          hanCheList = ["Cần bổ sung thêm các số liệu minh chứng thực tế và tăng tính sáng tạo."];
+        }
+      }
+      const hanCheStr = hanCheList.map((hc, i) => `${i + 1}. ${hc}`).join('\n');
+
+      // Build comments
+      let vhxhComment = "";
+      if (excelIncludeRemarks) {
+        if (isFail === "Không đạt") {
+          vhxhComment = `Tổng điểm: ${totalScore}/100. Đánh giá sơ bộ: KHÔNG ĐẠT.\nLý do: ${failReason}.\n\n* ƯU ĐIỂM:\n${uuDiemStr}\n\n* NHƯỢC ĐIỂM:\n${hanCheStr}`;
+        } else {
+          vhxhComment = `Tổng điểm: ${totalScore}/100. Đánh giá sơ bộ: ĐẠT.\nXếp loại: ${currentClass || 'Khá'}.\n\n* ƯU ĐIỂM:\n${uuDiemStr}\n\n* NHƯỢC ĐIỂM:\n${hanCheStr}`;
         }
       } else {
-        if (totalScore >= 50) {
-          isPass = "Đạt";
+        if (isFail === "Không đạt") {
+          vhxhComment = `Tổng điểm: ${totalScore}/100.\nĐánh giá sơ bộ: KHÔNG ĐẠT (Lý do: ${failReason}).`;
         } else {
-          isFail = "Không đạt";
+          vhxhComment = `Tổng điểm: ${totalScore}/100.\nĐánh giá sơ bộ: ĐẠT (Xếp loại: ${currentClass || 'Khá'}).`;
         }
       }
 
-      // Trích xuất ít nhất 2 lời nhận xét chi tiết để ghi vào biểu Excel
-      let remarks: string[] = [];
-      if (h.uuDiem && h.uuDiem.length > 0) {
-        remarks = h.uuDiem.map(u => u.trim().replace(/^-\s*/, '')).filter(u => u.length > 0);
-      }
-      
-      // Nếu chưa đủ 2 nhận xét, lấy thêm từ phần phân tích chi tiết của các tiêu chí
-      if (remarks.length < 2) {
-        const potentialSources = [
-          ...(h.suCanThiet?.analysis || []),
-          ...(h.tinhMoi?.analysis || []),
-          ...(h.giaiPhap?.analysis || []),
-          ...(h.hieuQua?.analysis || []),
-          ...(h.khaNangApDung?.analysis || [])
-        ];
-        potentialSources.forEach(s => {
-          if (remarks.length < 2 && s && s.trim().length > 10) {
-            remarks.push(s.trim());
-          }
-        });
-      }
-      
-      // Nếu vẫn chưa đủ, bổ sung các nhận xét chuyên môn tiêu chuẩn
-      if (remarks.length < 2) {
-        const defaultComments = [
-          "Giải pháp khoa học, thiết thực và có tính khả thi cao tại đơn vị.",
-          "Nội dung trình bày rõ ràng, bám sát các tiêu chuẩn kỹ thuật chuyên môn.",
-          "Đóng góp tích cực vào việc đổi mới phương pháp và nâng cao chất lượng công tác."
-        ];
-        while (remarks.length < 2) {
-          remarks.push(defaultComments[remarks.length]);
-        }
-      }
-
-      const finalRemarks = remarks.slice(0, 2).map((r, i) => `${i + 1}. ${r}`).join('\n');
-      const vhxhComment = excelIncludeRemarks 
-        ? `Tổng điểm: ${totalScore}/100.\nĐánh giá sơ bộ: ${isPass || isFail}.\nNhận xét:\n${finalRemarks}`
-        : `Tổng điểm: ${totalScore}/100.\nĐánh giá sơ bộ: ${isPass || isFail}.`;
-      
       const isCouncil = Boolean(isCouncilAppraisal || h.isCouncilAppraisal);
       let councilOpinion = "";
       let councilPass = "";
       let councilFail = "";
 
       if (isCouncil) {
-        councilOpinion = excelIncludeRemarks
-          ? `Đồng ý với đánh giá sơ bộ.\nTổng điểm: ${totalScore}/100.\nNhận xét:\n${finalRemarks}`
-          : `Đồng ý với đánh giá sơ bộ.\nTổng điểm: ${totalScore}/100.`;
         if (isPass === "Đạt") councilPass = "X";
         if (isFail === "Không đạt") councilFail = "X";
+
+        const councilClass = h.councilResult?.classification || currentClass || "Khá";
+        const councilFailReason = councilClass.includes("Không đạt") 
+          ? (councilClass.match(/\(([^)]+)\)/)?.[1] || failReason) 
+          : failReason;
+
+        if (excelIncludeRemarks) {
+          if (isFail === "Không đạt") {
+            councilOpinion = `Nhất trí kết quả thẩm định sơ bộ.\nTổng điểm: ${totalScore}/100. Kết luận: KHÔNG ĐẠT.\nLý do: ${councilFailReason}.\n\n* ƯU ĐIỂM:\n${uuDiemStr}\n\n* NHƯỢC ĐIỂM:\n${hanCheStr}`;
+          } else {
+            councilOpinion = `Nhất trí kết quả thẩm định sơ bộ.\nTổng điểm: ${totalScore}/100. Kết luận: ĐẠT.\nXếp loại: ${councilClass}.\n\n* ƯU ĐIỂM:\n${uuDiemStr}\n\n* NHƯỢC ĐIỂM:\n${hanCheStr}`;
+          }
+        } else {
+          if (isFail === "Không đạt") {
+            councilOpinion = `Nhất trí kết quả thẩm định sơ bộ.\nTổng điểm: ${totalScore}/100.\nKết luận: KHÔNG ĐẠT (Lý do: ${councilFailReason}).`;
+          } else {
+            councilOpinion = `Nhất trí kết quả thẩm định sơ bộ.\nTổng điểm: ${totalScore}/100.\nKết luận: ĐẠT (Xếp loại: ${councilClass}).`;
+          }
+        }
       }
 
       const row = worksheet.addRow([
@@ -1073,10 +1178,18 @@ export default function App() {
 
       // Check regulations
       if (associatedPlagResult) {
-         if (associatedPlagResult.warningLevel.includes('Không đạt') || associatedPlagResult.warningLevel.includes('nghiêm trọng')) {
+         const warningLower = (associatedPlagResult.warningLevel || '').toLowerCase();
+         const isPlagViolation = warningLower.includes('không đạt') || 
+                                 warningLower.includes('nghiêm trọng') || 
+                                 warningLower.includes('không đạt') || 
+                                 warningLower.includes('nghiêm trọng') ||
+                                 (associatedPlagResult.totalDuplicatePercent !== undefined && associatedPlagResult.totalDuplicatePercent > 30);
+         
+         const isAiViolation = associatedPlagResult.aiGeneratedPercent !== undefined && associatedPlagResult.aiGeneratedPercent > 10;
+
+         if (isPlagViolation) {
              finalClass = 'Không đạt (Mức độ vi phạm đạo văn quá quy định)';
-         }
-         if (associatedPlagResult.aiGeneratedPercent !== undefined && associatedPlagResult.aiGeneratedPercent > 10) {
+         } else if (isAiViolation) {
              finalClass = 'Không đạt (Vượt quá giới hạn nội dung AI sinh)';
          }
       }
@@ -1314,6 +1427,24 @@ export default function App() {
         finalClass = 'Không đạt';
       }
 
+      // Check regulations
+      if (plagResult) {
+         const warningLower = (plagResult.warningLevel || '').toLowerCase();
+         const isPlagViolation = warningLower.includes('không đạt') || 
+                                 warningLower.includes('nghiêm trọng') || 
+                                 warningLower.includes('không đạt') || 
+                                 warningLower.includes('nghiêm trọng') ||
+                                 (plagResult.totalDuplicatePercent !== undefined && plagResult.totalDuplicatePercent > 30);
+         
+         const isAiViolation = plagResult.aiGeneratedPercent !== undefined && plagResult.aiGeneratedPercent > 10;
+
+         if (isPlagViolation) {
+             finalClass = 'Không đạt (Mức độ vi phạm đạo văn quá quy định)';
+         } else if (isAiViolation) {
+             finalClass = 'Không đạt (Vượt quá giới hạn nội dung AI sinh)';
+         }
+      }
+
       if (isCouncil) {
         const councilEval: CouncilEvaluationResult = {
           suCanThiet: {
@@ -1473,6 +1604,24 @@ export default function App() {
         finalClass = 'Khá';
       } else {
         finalClass = 'Không đạt';
+      }
+
+      // Check regulations
+      if (plagResult) {
+         const warningLower = (plagResult.warningLevel || '').toLowerCase();
+         const isPlagViolation = warningLower.includes('không đạt') || 
+                                 warningLower.includes('nghiêm trọng') || 
+                                 warningLower.includes('không đạt') || 
+                                 warningLower.includes('nghiêm trọng') ||
+                                 (plagResult.totalDuplicatePercent !== undefined && plagResult.totalDuplicatePercent > 30);
+         
+         const isAiViolation = plagResult.aiGeneratedPercent !== undefined && plagResult.aiGeneratedPercent > 10;
+
+         if (isPlagViolation) {
+             finalClass = 'Không đạt (Mức độ vi phạm đạo văn quá quy định)';
+         } else if (isAiViolation) {
+             finalClass = 'Không đạt (Vượt quá giới hạn nội dung AI sinh)';
+         }
       }
 
       const councilEval: CouncilEvaluationResult = {
@@ -1700,6 +1849,521 @@ export default function App() {
     }
   };
 
+  const handleBulkUploadFiles = async (files: File[]) => {
+    if (!user) {
+      setErrorMsg("Vui lòng đăng nhập để sử dụng tính năng Kho Sáng Kiến!");
+      return;
+    }
+    if (files.length === 0) return;
+
+    // Filter duplicates against existing initiatives
+    const duplicates = files.filter(f => warehouseInitiatives.some(item => item.fileName === f.name));
+    
+    if (duplicates.length === files.length) {
+      setErrorMsg(`Tất cả ${files.length} tệp tin tải lên đều đã tồn tại trong Kho Sáng kiến!`);
+      const initialFiles = files.map(f => ({
+        name: f.name,
+        size: f.size,
+        status: 'failed' as const,
+        error: 'Tệp tin đã tồn tại trong Kho Sáng kiến (tránh tải trùng lặp)',
+        progress: 100
+      }));
+      setBulkUploadFiles(initialFiles);
+      return;
+    }
+
+    setIsBulkUploading(true);
+    
+    // Set initial status of files - mark duplicates immediately
+    const initialFiles = files.map(f => {
+      const isDuplicate = warehouseInitiatives.some(item => item.fileName === f.name);
+      return {
+        name: f.name,
+        size: f.size,
+        status: isDuplicate ? ('failed' as const) : ('pending' as const),
+        error: isDuplicate ? 'Tệp tin đã tồn tại trong Kho Sáng kiến (tránh tải trùng lặp)' : undefined,
+        progress: isDuplicate ? 100 : 0
+      };
+    });
+    setBulkUploadFiles(initialFiles);
+
+    // Helper cleanNull function
+    const cleanNull = (val: any) => {
+      if (typeof val === 'string' && (val.toLowerCase() === 'null' || val.toLowerCase() === '(null)')) {
+        return '...';
+      }
+      return val;
+    };
+
+    let processedCount = 0;
+
+    // Process each file
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const isDuplicate = warehouseInitiatives.some(item => item.fileName === file.name);
+      if (isDuplicate) continue;
+      
+      processedCount++;
+
+      // Update status to reading
+      setBulkUploadFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'reading', progress: 20 } : f));
+
+      let textData = '';
+      try {
+        if (file.name.endsWith('.pdf')) {
+          textData = await extractTextFromPDFFile(file);
+          if (!textData || textData.trim() === '') {
+            throw new Error('Không tìm thấy văn bản trong PDF (PDF dạng ảnh hoặc scan).');
+          }
+        } else if (file.name.endsWith('.txt')) {
+          textData = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = reject;
+            reader.readAsText(file);
+          });
+        } else {
+          throw new Error('Định dạng file không hỗ trợ (chỉ nhận .pdf, .txt).');
+        }
+
+        // Update status to extracting
+        setBulkUploadFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'extracting', progress: 50 } : f));
+
+        // Call extract-info with graceful fallback if quota or network errors occur
+        let data: any = {};
+        let aiExtractedSuccess = false;
+        try {
+          const response = await fetch('/api/extract-info', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              apiKeys,
+              model: selectedModelExtract,
+              fileName: file.name,
+              text: textData
+            })
+          });
+
+          if (response.ok) {
+            data = await response.json();
+            aiExtractedSuccess = true;
+          } else {
+            console.warn(`Lỗi API trích xuất (${response.status}), chuyển sang chế độ nạp thủ công.`);
+          }
+        } catch (apiErr) {
+          console.error("Lỗi kết nối hoặc gọi API trích xuất AI:", apiErr);
+        }
+        
+        // Generate new doc reference inside /users/{uid}/warehouse/
+        const docRef = doc(collection(db, 'users', user.uid, 'warehouse'));
+        const newId = docRef.id;
+
+        const fallbackTitle = file.name.replace(/\.[^/.]+$/, "");
+        const initiativeItem: WarehouseInitiative = {
+          id: newId,
+          initiativeTitle: aiExtractedSuccess && cleanNull(data.extractedTitle) && cleanNull(data.extractedTitle) !== '...' ? cleanNull(data.extractedTitle) : fallbackTitle,
+          teacherName: aiExtractedSuccess && cleanNull(data.extractedAuthor) && cleanNull(data.extractedAuthor) !== '...' ? cleanNull(data.extractedAuthor) : "Đang cập nhật...",
+          role: aiExtractedSuccess && cleanNull(data.extractedRole) && cleanNull(data.extractedRole) !== '...' ? cleanNull(data.extractedRole) : "Giáo viên",
+          schoolName: aiExtractedSuccess && cleanNull(data.extractedSchool) && cleanNull(data.extractedSchool) !== '...' ? cleanNull(data.extractedSchool) : "Đơn vị đang cập nhật...",
+          initiativeText: textData,
+          status: 'Chưa thẩm định',
+          fileName: file.name,
+          uploadedAt: new Date().toISOString()
+        };
+
+        // Save to Firestore
+        await setDoc(docRef, initiativeItem);
+
+        // Update local state
+        setWarehouseInitiatives(prev => [initiativeItem, ...prev]);
+
+        // Update file status to completed, appending warning if AI extraction failed
+        if (aiExtractedSuccess) {
+          setBulkUploadFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'completed', progress: 100 } : f));
+        } else {
+          setBulkUploadFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'completed', error: 'AI trích xuất lỗi (hết Quota/lỗi mạng), đã nạp nội dung thô.', progress: 100 } : f));
+        }
+
+      } catch (err: any) {
+        console.error(`Error processing bulk file ${file.name}:`, err);
+        setBulkUploadFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'failed', error: err.message || 'Lỗi xử lý file', progress: 100 } : f));
+      }
+    }
+
+    setIsBulkUploading(false);
+    
+    if (duplicates.length > 0) {
+      setSuccessMsg(`Đã tải lên và trích xuất thành công ${processedCount} sáng kiến mới. Phát hiện và bỏ qua ${duplicates.length} tệp tin trùng lặp!`);
+    } else {
+      setSuccessMsg("Tải lên và trích xuất thông tin loạt sáng kiến hoàn tất!");
+    }
+  };
+
+  const handleDeleteWarehouseInitiative = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Avoid triggering row selection
+    if (!user) return;
+    setDeleteConfirmId(id);
+  };
+
+  const executeDeleteWarehouseInitiative = async (id: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'users', user.uid, 'warehouse', id));
+      setWarehouseInitiatives(prev => prev.filter(item => item.id !== id));
+      setSelectedWarehouseIds(prev => prev.filter(selectedId => selectedId !== id));
+      setSuccessMsg("Đã xóa sáng kiến khỏi kho lưu trữ thành công.");
+      setDeleteConfirmId(null);
+    } catch (err: any) {
+      console.error("Error deleting warehouse initiative:", err);
+      setErrorMsg("Không thể xóa sáng kiến khỏi kho: " + (err.message || String(err)));
+      setDeleteConfirmId(null);
+    }
+  };
+
+  const executeBulkDeleteWarehouse = async () => {
+    if (!user || selectedWarehouseIds.length === 0) return;
+    try {
+      for (const id of selectedWarehouseIds) {
+        await deleteDoc(doc(db, 'users', user.uid, 'warehouse', id));
+      }
+      setWarehouseInitiatives(prev => prev.filter(item => !selectedWarehouseIds.includes(item.id)));
+      setSelectedWarehouseIds([]);
+      setSuccessMsg("Đã xóa hàng loạt thành công các sáng kiến được chọn.");
+      setIsBulkDeleteConfirm(false);
+    } catch (err: any) {
+      console.error("Error bulk deleting warehouse initiatives:", err);
+      setErrorMsg("Có lỗi xảy ra khi xóa hàng loạt: " + (err.message || String(err)));
+      setIsBulkDeleteConfirm(false);
+    }
+  };
+
+  const handleSelectWarehouseInitiative = (item: WarehouseInitiative) => {
+    setInitiativeTitle(item.initiativeTitle);
+    setInitiativeText(item.initiativeText);
+    setTeacher({
+      teacherName: item.teacherName === "Đang cập nhật..." ? "" : item.teacherName,
+      role: item.role === "Giáo viên" ? "" : item.role,
+      schoolName: item.schoolName === "Đơn vị đang cập nhật..." ? "" : item.schoolName,
+      birthYear: "",
+      stage: "Tiểu học",
+      subject: "",
+      phone: "",
+      email: ""
+    });
+
+    // Check if there is an evaluation in history for this initiative
+    const match = history.find(h => 
+      h.initiativeTitle.trim().toLowerCase() === item.initiativeTitle.trim().toLowerCase() &&
+      h.teacher.teacherName.trim().toLowerCase() === item.teacherName.trim().toLowerCase()
+    );
+
+    if (match) {
+      setCurrentResult(match);
+      setPlagResult(match.plagiarismResult || null);
+    } else {
+      setCurrentResult(null);
+      setPlagResult(null);
+    }
+
+    setMainTab('info'); // Navigate to Hồ sơ Sáng kiến
+    setSuccessMsg(`Đã nạp thành công sáng kiến "${item.initiativeTitle}" của tác giả ${item.teacherName} vào Khu vực làm việc! Bạn có thể tiến hành Kiểm tra đạo văn & Thẩm định ngay.`);
+  };
+
+  const handleExportWarehouseExcel = async (selectedIds: string[]) => {
+    const itemsToExport = warehouseInitiatives.filter(item => selectedIds.includes(item.id));
+    if (itemsToExport.length === 0) {
+      setErrorMsg("Vui lòng chọn ít nhất một sáng kiến trong kho để xuất file Excel!");
+      return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Danh sách Đề nghị SKKN');
+
+    // Mở rộng các ô tiêu đề
+    worksheet.mergeCells('A1:J1');
+    const title1 = worksheet.getCell('A1');
+    title1.value = 'DANH SÁCH';
+    title1.font = { name: 'Times New Roman', size: 14, bold: true };
+    title1.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    worksheet.mergeCells('A2:J2');
+    const title2 = worksheet.getCell('A2');
+    const currentYear = new Date().getFullYear();
+    title2.value = `ĐỀ NGHỊ CÔNG NHẬN SÁNG KIẾN CÓ HIỆU QUẢ ÁP DỤNG, PHẠM VI ẢNH HƯỞNG CẤP XÃ, NĂM ${currentYear}`;
+    title2.font = { name: 'Times New Roman', size: 13, bold: true };
+    title2.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    worksheet.mergeCells('A3:J3');
+    const title3 = worksheet.getCell('A3');
+    title3.value = `(Kèm theo Quyết định số       /QĐ-UBND ngày     tháng     năm ${currentYear} của Ủy ban nhân dân xã Hàm Yên)`;
+    title3.font = { name: 'Times New Roman', size: 13, italic: true };
+    title3.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    worksheet.addRow([]); // Dòng trống
+
+    // Header bảng (Dòng 5 và 6)
+    worksheet.mergeCells('A5:A6');
+    worksheet.mergeCells('B5:B6');
+    worksheet.mergeCells('C5:C6');
+    worksheet.mergeCells('D5:D6');
+    worksheet.mergeCells('E5:E6');
+    worksheet.mergeCells('F5:F6');
+    worksheet.mergeCells('G5:G6');
+    worksheet.mergeCells('H5:I5');
+    worksheet.mergeCells('J5:J6');
+
+    const headerNames = [
+      { cell: 'A5', label: 'STT' },
+      { cell: 'B5', label: 'Tên sáng kiến kinh nghiệm' },
+      { cell: 'C5', label: 'Họ và tên tác giả,\nnhóm tác giả' },
+      { cell: 'D5', label: 'Chức vụ' },
+      { cell: 'E5', label: 'Đơn vị công tác' },
+      { cell: 'F5', label: 'Ý kiến thẩm định của\nphòng Văn hóa - Xã hội' },
+      { cell: 'G5', label: 'Ý kiến của hội\nđồng thẩm định' },
+      { cell: 'H5', label: 'Kết quả đánh giá của\nhội đồng thẩm định' },
+      { cell: 'H6', label: 'Đạt' },
+      { cell: 'I6', label: 'Không đạt' },
+      { cell: 'J5', label: 'Ghi chú' }
+    ];
+
+    headerNames.forEach(h => {
+      const cell = worksheet.getCell(h.cell);
+      cell.value = h.label;
+      cell.font = { name: 'Times New Roman', size: 12, bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    });
+
+    // Apply borders to header cells (row 5 and 6, columns A to J)
+    for (let c = 1; c <= 10; c++) {
+      ['5', '6'].forEach(r => {
+        const cell = worksheet.getCell(`${String.fromCharCode(64 + c)}${r}`);
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+      });
+    }
+
+    // Sort by selected field in UI
+    let sortedItems = [...itemsToExport];
+    sortedItems.sort((a, b) => {
+      let valueA: any = '';
+      let valueB: any = '';
+
+      if (warehouseSortField === 'uploadedAt') {
+        valueA = new Date(a.uploadedAt || 0).getTime();
+        valueB = new Date(b.uploadedAt || 0).getTime();
+      } else if (warehouseSortField === 'initiativeTitle') {
+        valueA = (a.initiativeTitle || '').trim().toLowerCase();
+        valueB = (b.initiativeTitle || '').trim().toLowerCase();
+      } else if (warehouseSortField === 'teacherName') {
+        valueA = (a.teacherName || '').trim().toLowerCase();
+        valueB = (b.teacherName || '').trim().toLowerCase();
+      } else if (warehouseSortField === 'schoolName') {
+        valueA = (a.schoolName || '').trim().toLowerCase();
+        valueB = (b.schoolName || '').trim().toLowerCase();
+      } else if (warehouseSortField === 'status') {
+        const isAppraisedA = history.some(h => 
+          h.initiativeTitle.trim().toLowerCase() === a.initiativeTitle.trim().toLowerCase() &&
+          h.teacher.teacherName.trim().toLowerCase() === a.teacherName.trim().toLowerCase()
+        );
+        const isAppraisedB = history.some(h => 
+          h.initiativeTitle.trim().toLowerCase() === b.initiativeTitle.trim().toLowerCase() &&
+          h.teacher.teacherName.trim().toLowerCase() === b.teacherName.trim().toLowerCase()
+        );
+        valueA = isAppraisedA ? 1 : 0;
+        valueB = isAppraisedB ? 1 : 0;
+      }
+
+      if (valueA < valueB) return warehouseSortDirection === 'asc' ? -1 : 1;
+      if (valueA > valueB) return warehouseSortDirection === 'asc' ? 1 : -1;
+      
+      // Secondary sort by school if configured and primary values are equal
+      if (sortExcelBySchool) {
+        return (a.schoolName || "").localeCompare(b.schoolName || "");
+      }
+      return 0;
+    });
+
+    sortedItems.forEach((item, idx) => {
+      // Find matching history item
+      const h = history.find(e => 
+        e.initiativeTitle.trim().toLowerCase() === item.initiativeTitle.trim().toLowerCase() &&
+        e.teacher.teacherName.trim().toLowerCase() === item.teacherName.trim().toLowerCase()
+      );
+
+      let isPass = "";
+      let isFail = "";
+      let vhxhComment = "";
+      let councilOpinion = "";
+      let councilPass = "";
+      let councilFail = "";
+
+      if (h) {
+        let totalScore = h.totalScore || 0;
+        let failReason = "";
+
+        // Determine classification and possible fail reason
+        const currentClass = h.classification || "";
+        if (currentClass.includes('Không đạt')) {
+          isFail = 'Không đạt';
+          const match = currentClass.match(/\(([^)]+)\)/);
+          if (match) {
+            failReason = match[1];
+          } else {
+            failReason = "Mức độ vi phạm đạo văn hoặc vượt quá tỷ lệ AI quy định";
+          }
+        } else if (totalScore < 50) {
+          isFail = 'Không đạt';
+          failReason = "Tổng điểm dưới 50 điểm";
+        } else {
+          isPass = "Đạt";
+        }
+
+        // If isFail and no reason is extracted, check Plagiarism & AI
+        if (isFail === "Không đạt" && !failReason) {
+          if (h.plagiarismResult) {
+            const p = h.plagiarismResult;
+            if (p.totalDuplicatePercent > 30) {
+              failReason = `Tỷ lệ trùng lặp ${p.totalDuplicatePercent}% vượt quá giới hạn 30%`;
+            } else if (p.aiGeneratedPercent > 10) {
+              failReason = `Tỷ lệ nội dung AI sinh ${p.aiGeneratedPercent}% vượt quá giới hạn 10%`;
+            } else {
+              failReason = "Không đáp ứng tiêu chuẩn kỹ thuật về tính trung thực và chính tả";
+            }
+          } else {
+            failReason = "Chưa đáp ứng các tiêu chuẩn thẩm định hiện hành";
+          }
+        }
+
+        // 1. Get Ưu điểm (Strengths)
+        let uuDiemList = h.uuDiem || [];
+        if (uuDiemList.length === 0) {
+          uuDiemList = ["Nội dung có liên hệ thực tế phù hợp, trình bày theo đúng bố cục."];
+        }
+        const uuDiemStr = uuDiemList.map((u, i) => `${i + 1}. ${u}`).join('\n');
+
+        // 2. Get Nhược điểm (Weaknesses)
+        let hanCheList = h.hanChe || [];
+        if (hanCheList.length === 0) {
+          const cons: string[] = [];
+          if (h.tinhMoi?.cons) cons.push(...h.tinhMoi.cons);
+          if (h.giaiPhap?.cons) cons.push(...h.giaiPhap.cons);
+          if (h.hieuQua?.cons) cons.push(...h.hieuQua.cons);
+          if (h.khaNangApDung?.cons) cons.push(...h.khaNangApDung.cons);
+          
+          if (cons.length > 0) {
+            hanCheList = cons;
+          } else {
+            hanCheList = ["Cần bổ sung thêm các số liệu minh chứng thực tế và tăng tính sáng tạo."];
+          }
+        }
+        const hanCheStr = hanCheList.map((hc, i) => `${i + 1}. ${hc}`).join('\n');
+
+        if (excelIncludeRemarks) {
+          if (isFail === "Không đạt") {
+            vhxhComment = `Tổng điểm: ${totalScore}/100. Đánh giá sơ bộ: KHÔNG ĐẠT.\nLý do: ${failReason}.\n\n* ƯU ĐIỂM:\n${uuDiemStr}\n\n* NHƯỢC ĐIỂM:\n${hanCheStr}`;
+          } else {
+            vhxhComment = `Tổng điểm: ${totalScore}/100. Đánh giá sơ bộ: ĐẠT.\nXếp loại: ${currentClass || 'Khá'}.\n\n* ƯU ĐIỂM:\n${uuDiemStr}\n\n* NHƯỢC ĐIỂM:\n${hanCheStr}`;
+          }
+        } else {
+          if (isFail === "Không đạt") {
+            vhxhComment = `Tổng điểm: ${totalScore}/100.\nĐánh giá sơ bộ: KHÔNG ĐẠT (Lý do: ${failReason}).`;
+          } else {
+            vhxhComment = `Tổng điểm: ${totalScore}/100.\nĐánh giá sơ bộ: ĐẠT (Xếp loại: ${currentClass || 'Khá'}).`;
+          }
+        }
+
+        const isCouncil = Boolean(isCouncilAppraisal || h.isCouncilAppraisal);
+        if (isCouncil) {
+          if (isPass === "Đạt") councilPass = "X";
+          if (isFail === "Không đạt") councilFail = "X";
+
+          const councilClass = h.councilResult?.classification || currentClass || "Khá";
+          const councilFailReason = councilClass.includes("Không đạt") 
+            ? (councilClass.match(/\(([^)]+)\)/)?.[1] || failReason) 
+            : failReason;
+
+          if (excelIncludeRemarks) {
+            if (isFail === "Không đạt") {
+              councilOpinion = `Nhất trí kết quả thẩm định sơ bộ.\nTổng điểm: ${totalScore}/100. Kết luận: KHÔNG ĐẠT.\nLý do: ${councilFailReason}.\n\n* ƯU ĐIỂM:\n${uuDiemStr}\n\n* NHƯỢC ĐIỂM:\n${hanCheStr}`;
+            } else {
+              councilOpinion = `Nhất trí kết quả thẩm định sơ bộ.\nTổng điểm: ${totalScore}/100. Kết luận: ĐẠT.\nXếp loại: ${councilClass}.\n\n* ƯU ĐIỂM:\n${uuDiemStr}\n\n* NHƯỢC ĐIỂM:\n${hanCheStr}`;
+            }
+          } else {
+            if (isFail === "Không đạt") {
+              councilOpinion = `Nhất trí kết quả thẩm định sơ bộ.\nTổng điểm: ${totalScore}/100.\nKết luận: KHÔNG ĐẠT (Lý do: ${councilFailReason}).`;
+            } else {
+              councilOpinion = `Nhất trí kết quả thẩm định sơ bộ.\nTổng điểm: ${totalScore}/100.\nKết luận: ĐẠT (Xếp loại: ${councilClass}).`;
+            }
+          }
+        }
+      } else {
+        vhxhComment = "Chưa thẩm định";
+        councilOpinion = "";
+        councilPass = "";
+        councilFail = "";
+      }
+
+      const row = worksheet.addRow([
+        (idx + 1).toString(),
+        item.initiativeTitle || "Báo cáo sáng kiến kinh nghiệm (Chưa xác định)",
+        item.teacherName || "Đang cập nhật...",
+        item.role || "Giáo viên",
+        item.schoolName || "",
+        vhxhComment,
+        councilOpinion,
+        councilPass,
+        councilFail,
+        ""
+      ]);
+
+      row.eachCell((cell) => {
+        cell.font = { name: 'Times New Roman', size: 12 };
+        cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+      });
+
+      // STT, Đạt, Không đạt center
+      row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(8).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+
+    // Set Column Widths
+    worksheet.getColumn(1).width = 6;   // STT
+    worksheet.getColumn(2).width = 32;  // Tên sáng kiến
+    worksheet.getColumn(3).width = 22;  // Họ tên tác giả
+    worksheet.getColumn(4).width = 16;  // Chức vụ
+    worksheet.getColumn(5).width = 24;  // Đơn vị
+    worksheet.getColumn(6).width = 38;  // VHXH
+    worksheet.getColumn(7).width = 38;  // Hội đồng
+    worksheet.getColumn(8).width = 8;   // Đạt
+    worksheet.getColumn(9).width = 11;  // Không đạt
+    worksheet.getColumn(10).width = 10; // Ghi chú
+
+    worksheet.views = [
+      { state: 'normal', showGridLines: true }
+    ];
+
+    try {
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      saveAs(blob, `DanhSachDeNghiSangkien_${currentYear}.xlsx`);
+      setSuccessMsg(`Đã xuất thành công danh sách đề nghị cho ${itemsToExport.length} sáng kiến được chọn!`);
+    } catch (e: any) {
+      console.error(e);
+      setErrorMsg(`Lỗi khi xuất file Excel: ${e.message}`);
+    }
+  };
+
   const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -1746,6 +2410,41 @@ export default function App() {
         );
     }
   };
+
+  // Sorting logic for warehouse initiatives
+  const sortedWarehouseInitiatives = [...warehouseInitiatives].sort((a, b) => {
+    let valueA: any = '';
+    let valueB: any = '';
+
+    if (warehouseSortField === 'uploadedAt') {
+      valueA = new Date(a.uploadedAt || 0).getTime();
+      valueB = new Date(b.uploadedAt || 0).getTime();
+    } else if (warehouseSortField === 'initiativeTitle') {
+      valueA = (a.initiativeTitle || '').trim().toLowerCase();
+      valueB = (b.initiativeTitle || '').trim().toLowerCase();
+    } else if (warehouseSortField === 'teacherName') {
+      valueA = (a.teacherName || '').trim().toLowerCase();
+      valueB = (b.teacherName || '').trim().toLowerCase();
+    } else if (warehouseSortField === 'schoolName') {
+      valueA = (a.schoolName || '').trim().toLowerCase();
+      valueB = (b.schoolName || '').trim().toLowerCase();
+    } else if (warehouseSortField === 'status') {
+      const isAppraisedA = history.some(h => 
+        h.initiativeTitle.trim().toLowerCase() === a.initiativeTitle.trim().toLowerCase() &&
+        h.teacher.teacherName.trim().toLowerCase() === a.teacherName.trim().toLowerCase()
+      );
+      const isAppraisedB = history.some(h => 
+        h.initiativeTitle.trim().toLowerCase() === b.initiativeTitle.trim().toLowerCase() &&
+        h.teacher.teacherName.trim().toLowerCase() === b.teacherName.trim().toLowerCase()
+      );
+      valueA = isAppraisedA ? 1 : 0;
+      valueB = isAppraisedB ? 1 : 0;
+    }
+
+    if (valueA < valueB) return warehouseSortDirection === 'asc' ? -1 : 1;
+    if (valueA > valueB) return warehouseSortDirection === 'asc' ? 1 : -1;
+    return 0;
+  });
 
   if (loadingAuth) {
     return (
@@ -1814,44 +2513,58 @@ export default function App() {
       {/* Main Container */}
       <main className="flex-1 max-w-[1600px] w-full mx-auto px-4 lg:px-8 py-6 md:py-8 flex flex-col gap-6 md:gap-8 no-print">
 
-        <div className="flex border-b border-natural-border gap-2 overflow-x-auto custom-scrollbar">
+        <div className="flex border-b border-natural-border gap-1 overflow-x-auto custom-scrollbar">
            <button 
              onClick={() => setMainTab('guide')}
-             className={`px-4 py-3 font-bold uppercase tracking-wider text-[13px] border-b-2 transition whitespace-nowrap flex items-center gap-2 ${mainTab === 'guide' ? 'border-natural-primary text-natural-primary bg-natural-primary/5' : 'border-transparent text-natural-muted hover:text-natural-text hover:bg-natural-accent/50'}`}
+             className={`px-3 py-2 font-bold uppercase tracking-wider text-xs border-b-2 transition whitespace-nowrap flex items-center gap-1.5 ${mainTab === 'guide' ? 'border-emerald-600 text-emerald-700 bg-emerald-50/70 font-extrabold' : 'border-transparent text-natural-text/70 hover:text-natural-text hover:bg-natural-accent/50 font-semibold'}`}
            >
-             <HelpCircle className="w-4 h-4" /> Hướng dẫn
+             <HelpCircle className={`w-3.5 h-3.5 ${mainTab === 'guide' ? 'text-emerald-600' : 'text-natural-muted'}`} /> Hướng dẫn
+           </button>
+           <button 
+             onClick={() => setMainTab('repository')}
+             className={`px-3 py-2 font-bold uppercase tracking-wider text-xs border-b-2 transition whitespace-nowrap flex items-center gap-1.5 ${mainTab === 'repository' ? 'border-emerald-600 text-emerald-700 bg-emerald-50/70 font-extrabold' : 'border-transparent text-natural-text/70 hover:text-natural-text hover:bg-natural-accent/50 font-semibold'}`}
+           >
+             <BookOpen className={`w-3.5 h-3.5 ${mainTab === 'repository' ? 'text-emerald-600' : 'text-natural-muted'}`} /> Kho Sáng Kiến {warehouseInitiatives.length > 0 ? `(${warehouseInitiatives.length})` : ''}
            </button>
            <button 
              onClick={() => setMainTab('info')}
-             className={`px-4 py-3 font-bold uppercase tracking-wider text-[13px] border-b-2 transition whitespace-nowrap flex items-center gap-2 ${mainTab === 'info' ? 'border-natural-primary text-natural-primary bg-natural-primary/5' : 'border-transparent text-natural-muted hover:text-natural-text hover:bg-natural-accent/50'}`}
+             className={`px-3 py-2 font-bold uppercase tracking-wider text-xs border-b-2 transition whitespace-nowrap flex items-center gap-1.5 ${mainTab === 'info' ? 'border-emerald-600 text-emerald-700 bg-emerald-50/70 font-extrabold' : 'border-transparent text-natural-text/70 hover:text-natural-text hover:bg-natural-accent/50 font-semibold'}`}
            >
-             <FileText className="w-4 h-4" /> 1. Hồ sơ Sáng kiến
+             <FileText className={`w-3.5 h-3.5 ${mainTab === 'info' ? 'text-emerald-600' : 'text-natural-muted'}`} /> 1. Hồ sơ Sáng kiến
            </button>
            <button 
              onClick={() => setMainTab('plagiarism')}
-             className={`px-4 py-3 font-bold uppercase tracking-wider text-[13px] border-b-2 transition whitespace-nowrap flex items-center gap-2 ${mainTab === 'plagiarism' ? 'border-natural-primary text-natural-primary bg-natural-primary/5' : 'border-transparent text-natural-muted hover:text-natural-text hover:bg-natural-accent/50'}`}
+             className={`px-3 py-2 font-bold uppercase tracking-wider text-xs border-b-2 transition whitespace-nowrap flex items-center gap-1.5 ${mainTab === 'plagiarism' ? 'border-emerald-600 text-emerald-700 bg-emerald-50/70 font-extrabold' : 'border-transparent text-natural-text/70 hover:text-natural-text hover:bg-natural-accent/50 font-semibold'}`}
            >
-             <Search className="w-4 h-4" /> 2. Đạo văn, Chính tả & Sử dụng AI {plagResult ? `(${plagResult.totalDuplicatePercent}%)` : ''}
+             <Search className={`w-3.5 h-3.5 ${mainTab === 'plagiarism' ? 'text-emerald-600' : 'text-natural-muted'}`} /> 2. Đạo văn & AI {plagResult ? `(${plagResult.totalDuplicatePercent}%)` : ''}
            </button>
            <button 
              onClick={() => setMainTab('appraisal')}
-             className={`px-4 py-3 font-bold uppercase tracking-wider text-[13px] border-b-2 transition whitespace-nowrap flex items-center gap-2 ${mainTab === 'appraisal' ? 'border-natural-primary text-natural-primary bg-natural-primary/5' : 'border-transparent text-natural-muted hover:text-natural-text hover:bg-natural-accent/50'}`}
+             className={`px-3 py-2 font-bold uppercase tracking-wider text-xs border-b-2 transition whitespace-nowrap flex items-center gap-1.5 ${mainTab === 'appraisal' ? 'border-emerald-600 text-emerald-700 bg-emerald-50/70 font-extrabold' : 'border-transparent text-natural-text/70 hover:text-natural-text hover:bg-natural-accent/50 font-semibold'}`}
            >
-             <Award className="w-4 h-4" /> 3. Thẩm định & Xuất phiếu {currentResult ? `(${currentResult.totalScore}đ)` : ''}
+             <Award className={`w-3.5 h-3.5 ${mainTab === 'appraisal' ? 'text-emerald-600' : 'text-natural-muted'}`} /> 3. Thẩm định {currentResult ? `(${currentResult.totalScore}đ)` : ''}
            </button>
            <button 
              onClick={() => setMainTab('settings')}
-             className={`px-4 py-3 font-bold uppercase tracking-wider text-[13px] border-b-2 transition whitespace-nowrap flex items-center gap-2 ml-auto ${mainTab === 'settings' ? 'border-natural-primary text-natural-primary bg-natural-primary/5' : 'border-transparent text-natural-muted hover:text-natural-text hover:bg-natural-accent/50'}`}
+             className={`px-3 py-2 font-bold uppercase tracking-wider text-xs border-b-2 transition whitespace-nowrap flex items-center gap-1.5 ml-auto ${mainTab === 'settings' ? 'border-emerald-600 text-emerald-700 bg-emerald-50/70 font-extrabold' : 'border-transparent text-natural-text/70 hover:text-natural-text hover:bg-natural-accent/50 font-semibold'}`}
            >
-             <Settings className="w-4 h-4" /> Cài đặt API & Hệ thống
+             <Settings className={`w-3.5 h-3.5 ${mainTab === 'settings' ? 'text-emerald-600' : 'text-natural-muted'}`} /> Cài đặt hệ thống
            </button>
-        </div>
+         </div>
         
         {/* Global Error warning bar */}
         {errorMsg && (
           <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-xl text-sm text-red-800 flex items-start gap-3 shadow-sm mx-auto w-full max-w-4xl cursor-pointer" onClick={() => setErrorMsg(null)}>
             <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
             <div>{errorMsg}</div>
+          </div>
+        )}
+
+        {/* Global Success warning bar */}
+        {successMsg && (
+          <div className="bg-emerald-50 border-l-4 border-emerald-500 p-4 rounded-xl text-sm text-emerald-800 flex items-start gap-3 shadow-sm mx-auto w-full max-w-4xl cursor-pointer" onClick={() => setSuccessMsg(null)}>
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div>{successMsg}</div>
           </div>
         )}
 
@@ -1888,10 +2601,10 @@ export default function App() {
                       <p class="step-desc"><span class="step">B2:</span> <span class="highlight">Nhập Key API</span> vào ô tương ứng. Nếu chưa nhập, AI sẽ <span class="highlight">không thể hoạt động</span> (báo lỗi).</p>
                       <p class="step-desc"><span class="step">B3:</span> Nhấn <span class="highlight">"Lưu cấu hình"</span>.</p>
 
-                      <h3>Bước 2: Tải lên Sáng kiến & Tự động trích xuất</h3>
-                      <p class="step-desc"><span class="step">B1:</span> Tại thẻ <strong>"1. Hồ sơ Sáng kiến"</strong>, <span class="highlight">tải file Sáng kiến lên</span> (hỗ trợ .PDF, .TXT) hoặc dán nội dung.</p>
-                      <p class="step-desc"><span class="step">B2:</span> <span class="highlight">Chờ AI tự động trích xuất</span> và điền đầy đủ các thông tin tác giả.</p>
-                      <p class="step-desc"><span class="step">B3:</span> Nhấn <span class="highlight">"Tiếp tục: 2. Đạo văn, Chính tả & Sử dụng AI"</span> để chuyển sang bước 2.</p>
+                      <h3>Bước 2: Tải lên Kho Sáng kiến & Nạp dữ liệu</h3>
+                      <p class="step-desc"><span class="step">B1:</span> Chuyển sang thẻ <span class="highlight">"Kho Sáng Kiến"</span> để tải các tệp tin sáng kiến (.PDF, .TXT) lên kho lưu trữ tập trung.</p>
+                      <p class="step-desc"><span class="step">B2:</span> Tại danh sách sáng kiến trong kho, nhấn nút <span class="highlight">"Nạp làm việc"</span> (hoặc chọn sáng kiến) để tải nội dung vào bộ nhớ hệ thống.</p>
+                      <p class="step-desc"><span class="step">B3:</span> Hệ thống sẽ <span class="highlight">tự động trích xuất bằng AI</span> (tên giáo viên, năm sinh, trường, môn học...) và nạp vào thẻ <span class="highlight">"1. Hồ sơ Sáng kiến"</span>.</p>
 
                       <h3>Bước 3: Kiểm tra Đạo văn & Lỗi kỹ thuật</h3>
                       <p class="step-desc"><span class="step">B1:</span> Chuyển sang thẻ <span class="highlight">"2. Đạo văn, Chính tả & Sử dụng AI"</span>.</p>
@@ -1939,11 +2652,11 @@ export default function App() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <h3 className="font-bold text-natural-primary text-base flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-natural-primary text-white flex items-center justify-center text-xs">2</div> Bước 2: Tải lên Sáng kiến & Tự động trích xuất</h3>
+                <h3 className="font-bold text-natural-primary text-base flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-natural-primary text-white flex items-center justify-center text-xs">2</div> Bước 2: Tải lên Kho Sáng kiến & Nạp dữ liệu</h3>
                 <ul className="list-none pl-8 flex flex-col gap-1">
-                  <li>B1: Tại thẻ <strong>"1. Hồ sơ Sáng kiến"</strong>, <strong className="text-red-600">tải file Sáng kiến lên</strong> (hỗ trợ .PDF, .TXT) hoặc dán nội dung.</li>
-                  <li>B2: <strong className="text-red-600">Chờ AI tự động trích xuất</strong> và điền đầy đủ các thông tin tác giả.</li>
-                  <li>B3: Nhấn <strong className="text-red-600">"Tiếp tục: 2. Đạo văn, Chính tả & Sử dụng AI"</strong> để chuyển sang bước sau.</li>
+                  <li>B1: Chuyển sang thẻ <strong className="text-red-600">"Kho Sáng Kiến"</strong> để tải các tệp tin .PDF hoặc .TXT của các sáng kiến lên hệ thống quản lý tập trung.</li>
+                  <li>B2: Nhấn nút <strong className="text-red-600">"Nạp làm việc"</strong> trên sáng kiến muốn thẩm định để hệ thống bắt đầu nạp nội dung.</li>
+                  <li>B3: <strong className="text-red-600">Trợ lý AI sẽ tự động trích xuất</strong> các thông tin tác giả (Họ tên, năm sinh, môn học, chức vụ, trường lớp, tên đề tài...) và tự động điền vào thẻ <strong className="text-red-600">"1. Hồ sơ Sáng kiến"</strong>.</li>
                 </ul>
               </div>
 
@@ -1978,6 +2691,377 @@ export default function App() {
                   <li>B2: Kéo xuống cuối trang, chọn <strong className="text-red-600">"In Phiếu Thẩm định (PDF)"</strong> để tải bản báo cáo về.</li>
                   <li>B3: Hoặc chọn <strong className="text-red-600">"Tải Danh sách Excel"</strong> / <strong className="text-red-600">"Lưu file JSON"</strong> để lưu trữ kết quả đánh giá.</li>
                 </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+        )}
+
+        {mainTab === 'repository' && (
+        <section id="repository-section" className="w-full max-w-7xl mx-auto flex flex-col gap-6">
+          <div className="bg-white rounded-2xl border border-natural-border shadow-sm overflow-hidden p-6 flex flex-col gap-6">
+            <div className="border-b border-natural-border pb-4">
+              <h2 className="text-xl font-bold text-natural-primary flex items-center gap-2">
+                <BookOpen className="w-6 h-6 text-natural-primary" />
+                Kho lưu trữ tệp tin Sáng kiến kinh nghiệm
+              </h2>
+              <p className="text-sm text-natural-muted mt-1">
+                Tải lên đồng thời nhiều tệp tin sáng kiến (.pdf, .txt), tự động trích xuất thông tin tác giả, quản lý trạng thái thẩm định và xuất nhanh bảng kê Excel đề nghị công nhận sáng kiến.
+              </p>
+            </div>
+
+            {/* Bulk Upload Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-1 bg-natural-accent/30 rounded-2xl p-5 border border-natural-border/60 flex flex-col gap-4">
+                <h3 className="font-bold text-natural-primary text-sm uppercase tracking-wider flex items-center gap-1.5">
+                  <Upload className="w-4 h-4" /> Tải lên hàng loạt
+                </h3>
+                
+                {/* Drag and Drop Zone */}
+                <div 
+                  className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 min-h-[160px] bg-white ${
+                    isDragging ? 'border-natural-primary bg-natural-primary/5' : 'border-natural-border/80 hover:border-natural-primary/60 hover:bg-natural-accent/20'
+                  }`}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.pdf') || f.name.endsWith('.txt'));
+                    if (files.length > 0) {
+                      handleBulkUploadFiles(files);
+                    } else {
+                      setErrorMsg("Hệ thống chỉ hỗ trợ tệp tin .PDF và .TXT!");
+                    }
+                  }}
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.multiple = true;
+                    input.accept = '.pdf,.txt';
+                    input.onchange = (e) => {
+                      const files = Array.from((e.target as HTMLInputElement).files || []);
+                      if (files.length > 0) {
+                        handleBulkUploadFiles(files);
+                      }
+                    };
+                    input.click();
+                  }}
+                >
+                  <UploadCloud className="w-10 h-10 text-natural-muted" />
+                  <div className="text-sm font-semibold text-natural-text">Kéo thả tệp tin hoặc nhấn để chọn</div>
+                  <div className="text-xs text-natural-muted">Hỗ trợ tải lên nhiều file .PDF, .TXT cùng lúc</div>
+                </div>
+
+                {/* Bulk Files Progress List */}
+                {bulkUploadFiles.length > 0 && (
+                  <div className="flex flex-col gap-3 mt-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-1">
+                    <div className="text-xs font-bold text-natural-muted uppercase tracking-wider">Tiến trình tải lên:</div>
+                    {bulkUploadFiles.map((f, idx) => (
+                      <div key={idx} className="bg-white p-3 rounded-lg border border-natural-border text-xs flex flex-col gap-1.5 shadow-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-natural-text truncate max-w-[180px]" title={f.name}>{f.name}</span>
+                          <span className="text-natural-muted">{(f.size / 1024).toFixed(1)} KB</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[10px]">
+                          {f.status === 'pending' && <span className="text-gray-500 font-medium">Đang chờ...</span>}
+                          {f.status === 'reading' && <span className="text-blue-600 font-medium animate-pulse">Đang đọc file...</span>}
+                          {f.status === 'extracting' && <span className="text-amber-600 font-medium animate-pulse">Đang phân tích thông tin...</span>}
+                          {f.status === 'completed' && <span className="text-emerald-600 font-bold">✓ Hoàn thành</span>}
+                          {f.status === 'failed' && <span className="text-red-600 font-bold" title={f.error}>✕ Thất bại</span>}
+                          <span>{f.progress}%</span>
+                        </div>
+                        <div className="w-full bg-gray-100 h-1 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full transition-all duration-300 ${
+                              f.status === 'completed' ? 'bg-emerald-500' : f.status === 'failed' ? 'bg-red-500' : 'bg-natural-primary'
+                            }`}
+                            style={{ width: `${f.progress}%` }}
+                          />
+                        </div>
+                        {f.error && (
+                          <div className="text-[10px] text-red-500 bg-red-50 p-1 rounded border border-red-100 break-words">
+                            {f.error}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Warehouse Table & Action panel */}
+              <div className="lg:col-span-2 flex flex-col gap-4">
+                <div className="flex flex-col gap-3 bg-natural-accent/20 border border-natural-border/60 p-4 rounded-2xl">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="checkbox"
+                        id="select-all-warehouse"
+                        className="w-4 h-4 rounded text-natural-primary border-gray-300 focus:ring-natural-primary cursor-pointer"
+                        checked={warehouseInitiatives.length > 0 && selectedWarehouseIds.length === warehouseInitiatives.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedWarehouseIds(warehouseInitiatives.map(item => item.id));
+                          } else {
+                            setSelectedWarehouseIds([]);
+                          }
+                        }}
+                      />
+                      <label htmlFor="select-all-warehouse" className="text-sm font-semibold text-natural-text cursor-pointer select-none">
+                        Chọn tất cả ({warehouseInitiatives.length})
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                      <button
+                        onClick={() => handleExportWarehouseExcel(selectedWarehouseIds)}
+                        disabled={selectedWarehouseIds.length === 0}
+                        className="flex-1 sm:flex-initial bg-natural-primary hover:bg-natural-primary/95 text-white font-bold text-xs py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Xuất biểu Excel đề nghị ({selectedWarehouseIds.length})
+                      </button>
+                      {selectedWarehouseIds.length > 0 && (
+                        <button
+                          onClick={() => setIsBulkDeleteConfirm(true)}
+                          className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-semibold text-xs py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Xóa đã chọn
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ⚡ SORTING BAR */}
+                  {warehouseInitiatives.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-natural-border/60 text-xs text-natural-muted font-medium">
+                      <span className="shrink-0 flex items-center gap-1 text-natural-text font-bold">
+                        <ArrowUpDown className="w-3.5 h-3.5 text-natural-muted shrink-0" /> Sắp xếp theo trường:
+                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {[
+                          { key: 'uploadedAt', label: 'Ngày tải lên' },
+                          { key: 'initiativeTitle', label: 'Tên sáng kiến' },
+                          { key: 'teacherName', label: 'Tác giả' },
+                          { key: 'schoolName', label: 'Trường/Đơn vị' },
+                          { key: 'status', label: 'Trạng thái' }
+                        ].map((field) => {
+                          const isActive = warehouseSortField === field.key;
+                          return (
+                            <button
+                              key={field.key}
+                              onClick={() => {
+                                if (isActive) {
+                                  setWarehouseSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                                } else {
+                                  setWarehouseSortField(field.key as any);
+                                  setWarehouseSortDirection(field.key === 'uploadedAt' ? 'desc' : 'asc');
+                                }
+                              }}
+                              className={`px-2.5 py-1 rounded-lg border text-[11px] transition duration-150 flex items-center gap-1 cursor-pointer ${
+                                isActive 
+                                  ? 'bg-natural-primary text-white border-natural-primary shadow-xs font-semibold' 
+                                  : 'bg-white text-natural-text border-natural-border hover:bg-natural-accent/35'
+                              }`}
+                            >
+                              {field.label}
+                              {isActive && (
+                                warehouseSortDirection === 'asc' 
+                                  ? <ArrowUp className="w-3 h-3 text-white shrink-0" /> 
+                                  : <ArrowDown className="w-3 h-3 text-white shrink-0" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {warehouseInitiatives.length === 0 ? (
+                  <div className="text-center py-12 border border-dashed border-natural-border rounded-2xl flex flex-col items-center justify-center gap-3 bg-white">
+                    <BookOpen className="w-12 h-12 text-natural-muted" />
+                    <div className="font-bold text-sm text-natural-text">Kho sáng kiến trống</div>
+                    <p className="text-xs text-natural-muted max-w-sm">
+                      Kéo thả các báo cáo sáng kiến (.pdf hoặc .txt) vào ô tải lên ở bên trái để lưu trữ và quản lý thông tin tập trung.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-white border border-natural-border rounded-xl overflow-hidden shadow-xs">
+                    <div className="overflow-x-auto max-h-[500px] custom-scrollbar">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-natural-accent border-b border-natural-border text-natural-muted uppercase font-bold tracking-wider select-none">
+                            <th className="py-3 px-3 w-10 text-center"></th>
+                            <th className="py-3 px-2 w-10 text-center">STT</th>
+                            <th 
+                              className="py-3 px-3 min-w-[200px] cursor-pointer hover:bg-natural-accent/50 transition duration-150 group"
+                              onClick={() => {
+                                if (warehouseSortField === 'initiativeTitle') {
+                                  setWarehouseSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                                } else {
+                                  setWarehouseSortField('initiativeTitle');
+                                  setWarehouseSortDirection('asc');
+                                }
+                              }}
+                            >
+                              <div className="flex items-center gap-1">
+                                Tên sáng kiến kinh nghiệm
+                                {warehouseSortField === 'initiativeTitle' ? (
+                                  warehouseSortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-natural-primary shrink-0" /> : <ArrowDown className="w-3.5 h-3.5 text-natural-primary shrink-0" />
+                                ) : (
+                                  <ArrowUpDown className="w-3.5 h-3.5 text-natural-muted shrink-0 opacity-40 group-hover:opacity-100" />
+                                )}
+                              </div>
+                            </th>
+                            <th 
+                              className="py-3 px-3 cursor-pointer hover:bg-natural-accent/50 transition duration-150 group"
+                              onClick={() => {
+                                if (warehouseSortField === 'teacherName') {
+                                  setWarehouseSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                                } else {
+                                  setWarehouseSortField('teacherName');
+                                  setWarehouseSortDirection('asc');
+                                }
+                              }}
+                            >
+                              <div className="flex items-center gap-1">
+                                Tác giả
+                                {warehouseSortField === 'teacherName' ? (
+                                  warehouseSortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-natural-primary shrink-0" /> : <ArrowDown className="w-3.5 h-3.5 text-natural-primary shrink-0" />
+                                ) : (
+                                  <ArrowUpDown className="w-3.5 h-3.5 text-natural-muted shrink-0 opacity-40 group-hover:opacity-100" />
+                                )}
+                              </div>
+                            </th>
+                            <th 
+                              className="py-3 px-3 cursor-pointer hover:bg-natural-accent/50 transition duration-150 group"
+                              onClick={() => {
+                                if (warehouseSortField === 'schoolName') {
+                                  setWarehouseSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                                } else {
+                                  setWarehouseSortField('schoolName');
+                                  setWarehouseSortDirection('asc');
+                                }
+                              }}
+                            >
+                              <div className="flex items-center gap-1">
+                                Chức vụ & Đơn vị
+                                {warehouseSortField === 'schoolName' ? (
+                                  warehouseSortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-natural-primary shrink-0" /> : <ArrowDown className="w-3.5 h-3.5 text-natural-primary shrink-0" />
+                                ) : (
+                                  <ArrowUpDown className="w-3.5 h-3.5 text-natural-muted shrink-0 opacity-40 group-hover:opacity-100" />
+                                )}
+                              </div>
+                            </th>
+                            <th 
+                              className="py-3 px-3 w-32 cursor-pointer hover:bg-natural-accent/50 transition duration-150 group"
+                              onClick={() => {
+                                if (warehouseSortField === 'status') {
+                                  setWarehouseSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                                } else {
+                                  setWarehouseSortField('status');
+                                  setWarehouseSortDirection('asc');
+                                }
+                              }}
+                            >
+                              <div className="flex items-center gap-1">
+                                Trạng thái
+                                {warehouseSortField === 'status' ? (
+                                  warehouseSortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-natural-primary shrink-0" /> : <ArrowDown className="w-3.5 h-3.5 text-natural-primary shrink-0" />
+                                ) : (
+                                  <ArrowUpDown className="w-3.5 h-3.5 text-natural-muted shrink-0 opacity-40 group-hover:opacity-100" />
+                                )}
+                              </div>
+                            </th>
+                            <th className="py-3 px-3 w-28 text-center">Hành động</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-natural-border/50">
+                          {sortedWarehouseInitiatives.map((item, idx) => {
+                            // Determine status: is there a matching item in history?
+                            const isAppraised = history.some(h => 
+                              h.initiativeTitle.trim().toLowerCase() === item.initiativeTitle.trim().toLowerCase() &&
+                              h.teacher.teacherName.trim().toLowerCase() === item.teacherName.trim().toLowerCase()
+                            );
+                            
+                            const isSelected = selectedWarehouseIds.includes(item.id);
+
+                            return (
+                              <tr 
+                                key={item.id} 
+                                className={`hover:bg-natural-accent/30 transition cursor-pointer ${isSelected ? 'bg-natural-primary/5' : ''}`}
+                                onClick={() => handleSelectWarehouseInitiative(item)}
+                              >
+                                <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                  <input 
+                                    type="checkbox"
+                                    className="w-4 h-4 rounded text-natural-primary border-gray-300 focus:ring-natural-primary"
+                                    checked={isSelected}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSelectedWarehouseIds(prev => [...prev, item.id]);
+                                      } else {
+                                        setSelectedWarehouseIds(prev => prev.filter(id => id !== item.id));
+                                      }
+                                    }}
+                                  />
+                                </td>
+                                <td className="py-3 px-2 text-center text-natural-muted font-mono">{idx + 1}</td>
+                                <td className="py-3 px-3">
+                                  <div className="font-semibold text-natural-text line-clamp-2" title={item.initiativeTitle}>
+                                    {item.initiativeTitle}
+                                  </div>
+                                  <div className="text-[10px] text-natural-muted flex items-center gap-1 mt-1 font-mono">
+                                    <FileText className="w-3 h-3 shrink-0" /> {item.fileName}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-3">
+                                  <div className="font-semibold text-natural-text">{item.teacherName}</div>
+                                </td>
+                                <td className="py-3 px-3">
+                                  <div className="text-natural-text font-medium">{item.role}</div>
+                                  <div className="text-natural-muted text-[10px] truncate max-w-[150px]">{item.schoolName}</div>
+                                </td>
+                                <td className="py-3 px-3">
+                                  {isAppraised ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                                      Đã thẩm định
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                      Chưa thẩm định
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button
+                                      onClick={() => handleSelectWarehouseInitiative(item)}
+                                      className="p-1.5 hover:bg-natural-primary/10 text-natural-primary rounded-lg transition"
+                                      title="Nạp vào khu vực làm việc"
+                                    >
+                                      <Play className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={(e) => handleDeleteWarehouseInitiative(item.id, e)}
+                                      className="p-1.5 hover:bg-red-100 text-red-600 rounded-lg transition"
+                                      title="Xóa khỏi kho"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -2024,84 +3108,64 @@ export default function App() {
                   </div>
                 </div>
                 
-                {/* File Upload Area */}
-                <div 
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  className={`relative border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center text-center transition-all ${
-                    isDragging 
-                      ? 'border-natural-primary bg-natural-primary/5' 
-                      : 'border-natural-border/80 hover:border-natural-primary/50 bg-[#faf9f5]'
-                  }`}
-                  style={{ minHeight: '120px' }}
-                >
-                  <input
-                    type="file"
-                    accept=".pdf,.txt"
-                    onChange={handleFileChange}
-                    className="absolute inset-0 w-full h-full cursor-pointer opacity-0"
-                  />
-                  <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm border border-natural-border/40 text-natural-muted mb-2">
-                    <FileUp className="w-5 h-5 text-natural-primary" />
+                {/* Active loaded file info / Warehouse Navigation */}
+                {initiativeText ? (
+                  <div className="bg-emerald-50/50 border border-emerald-200 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">
+                        <FileCheck className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                          Sáng kiến đã được nạp thành công
+                        </div>
+                        <div className="text-sm font-bold text-natural-text mt-1 line-clamp-1" title={initiativeTitle}>
+                          {initiativeTitle || "Báo cáo sáng kiến"}
+                        </div>
+                        <div className="text-[11px] text-natural-muted font-medium mt-0.5 flex flex-wrap items-center gap-2">
+                          <span>Kích thước: {Math.round(initiativeText.length / 1024 * 10) / 10} KB</span>
+                          <span>•</span>
+                          <span>Độ dài: {initiativeText.length.toLocaleString('vi-VN')} ký tự</span>
+                          <span>•</span>
+                          <span>Số từ: ~{initiativeText.split(/\s+/).filter(Boolean).length.toLocaleString('vi-VN')} từ</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTeacher({ teacherName: '', birthYear: '', role: '', schoolName: '', stage: 'Tiểu học', subject: '', phone: '', email: '' });
+                        setInitiativeTitle('');
+                        setInitiativeText('');
+                        setErrorMsg(null);
+                        setPlagFileBase64('');
+                        setPlagFileName('');
+                        setPlagResult(null);
+                        setCurrentResult(null);
+                        setSuccessMsg("Đã giải phóng sáng kiến hiện tại khỏi khu vực làm việc.");
+                      }}
+                      className="text-xs font-bold text-red-600 hover:text-white hover:bg-red-600 px-3 py-2 rounded-lg border border-red-200 transition shrink-0 cursor-pointer"
+                    >
+                      Giải phóng Sáng kiến
+                    </button>
                   </div>
-                  
-                  {plagFileName ? (
+                ) : (
+                  <div className="bg-natural-accent/10 border border-dashed border-natural-border/80 rounded-xl p-6 flex flex-col items-center justify-center text-center gap-3.5">
+                    <BookOpen className="w-10 h-10 text-natural-muted/70" />
                     <div className="space-y-1">
-                      <p className="text-xs font-bold text-natural-primary">{plagFileName}</p>
-                      <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded inline-block">Đã đính kèm tệp PDF/TXT</p>
+                      <h4 className="text-xs font-bold text-natural-text uppercase tracking-wider">Chưa nạp sáng kiến để làm việc</h4>
+                      <p className="text-[11px] text-natural-muted max-w-md mx-auto leading-relaxed">
+                        Hệ thống đã nâng cấp lên chế độ lưu trữ và quản lý tập trung. Vui lòng chuyển sang thẻ <strong>Kho Sáng Kiến</strong> để tải lên tệp tin và nạp vào khu vực làm việc.
+                      </p>
                     </div>
-                  ) : (
-                    <div className="space-y-1">
-                      <p className="text-xs font-bold text-natural-text">Kéo thả hoặc Tải lên (.PDF / .TXT)</p>
-                      <p className="text-[10px] text-natural-muted">Vui lòng tải lên tài liệu để phân tích và đánh giá.</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Extraction Timeline */}
-                {isExtractingInfo && (
-                  <div className="mt-4 p-5 border border-natural-border rounded-xl bg-white shadow-sm font-sans relative overflow-hidden">
-                    <div className="absolute top-0 left-0 h-1 bg-[#8b8b68] transition-all duration-500" style={{ width: `${(extractionStep / 3) * 100}%` }}></div>
-                    
-                    <p className="text-xs font-bold text-natural-text uppercase mb-4 flex items-center gap-2">
-                      <Loader2 className="w-4 h-4 text-natural-primary animate-spin" />
-                      Đang phân tích tài liệu tải lên...
-                    </p>
-                    
-                    <div className="flex flex-col gap-3 relative ml-1">
-                      <div className="absolute left-2.5 top-2.5 bottom-2.5 w-px bg-natural-border"></div>
-                      
-                      {/* Step 1 */}
-                      <div className={`flex items-center gap-3 relative z-10 transition-all duration-300 ${extractionStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-40 translate-y-1'}`}>
-                        <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border ${extractionStep >= 1 ? 'border-[#8b8b68] bg-[#f8f7f3]' : 'border-natural-border bg-white'}`}>
-                          {extractionStep > 1 ? <Check className="w-3 h-3 text-[#8b8b68]" /> : (extractionStep === 1 ? <Loader2 className="w-3 h-3 text-[#8b8b68] animate-spin" /> : <div className="w-1.5 h-1.5 rounded-full bg-natural-border"></div>)}
-                        </div>
-                        <div className="flex flex-col">
-                          <span className={`text-sm ${extractionStep >= 1 ? 'font-semibold text-natural-primary' : 'text-natural-muted'}`}>Bóc tách nội dung tập tin PDF/TXT</span>
-                        </div>
-                      </div>
-                      
-                      {/* Step 2 */}
-                      <div className={`flex items-center gap-3 relative z-10 transition-all duration-300 ${extractionStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-40 translate-y-1'}`}>
-                        <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border ${extractionStep >= 2 ? 'border-[#8b8b68] bg-[#f8f7f3]' : 'border-natural-border bg-white'}`}>
-                          {extractionStep > 2 ? <Check className="w-3 h-3 text-[#8b8b68]" /> : (extractionStep === 2 ? <Loader2 className="w-3 h-3 text-[#8b8b68] animate-spin" /> : <div className="w-1.5 h-1.5 rounded-full bg-natural-border"></div>)}
-                        </div>
-                        <div className="flex flex-col">
-                          <span className={`text-sm ${extractionStep >= 2 ? 'font-semibold text-natural-primary' : 'text-natural-muted'}`}>AI Phân tích tác giả, chức vụ, trường lớp...</span>
-                        </div>
-                      </div>
-                      
-                      {/* Step 3 */}
-                      <div className={`flex items-center gap-3 relative z-10 transition-all duration-300 ${extractionStep >= 3 ? 'opacity-100 translate-y-0' : 'opacity-40 translate-y-1'}`}>
-                        <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border ${extractionStep >= 3 ? 'border-emerald-600 bg-emerald-50' : 'border-natural-border bg-white'}`}>
-                          {extractionStep >= 3 ? <Check className="w-3 h-3 text-emerald-600" /> : <div className="w-1.5 h-1.5 rounded-full bg-natural-border"></div>}
-                        </div>
-                        <div className="flex flex-col">
-                          <span className={`text-sm ${extractionStep >= 3 ? 'font-semibold text-emerald-700' : 'text-natural-muted'}`}>Hoàn thiện dữ liệu! Tự động chuyển tab sau 2s...</span>
-                        </div>
-                      </div>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setMainTab('repository')}
+                      className="bg-natural-primary hover:bg-natural-primary/95 text-white font-bold text-xs py-2 px-4 rounded-lg transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <BookOpen className="w-4 h-4" /> Đi tới Kho Sáng Kiến
+                    </button>
                   </div>
                 )}
 
@@ -4230,43 +5294,42 @@ export default function App() {
             </div>
 
             {/* Printable Area content (Strict administrative Vietnam layout - Matches PDF format exactly) */}
-            <div ref={printRef} className="p-8 md:p-12 overflow-y-auto flex-1 font-serif leading-relaxed text-black max-w-[210mm] mx-auto bg-white print-force-static text-justify content-justify" style={{ fontFamily: '"Times New Roman", Times, serif', fontSize: '14pt' }}>
+            <div ref={printRef} className="p-6 md:p-8 overflow-y-auto flex-1 font-serif text-black max-w-[210mm] mx-auto bg-white print-force-static text-justify content-justify" style={{ fontFamily: '"Times New Roman", Times, serif', fontSize: '13pt', lineHeight: '1.35' }}>
               
               {/* Top Banner */}
-              <div className="header-banner" style={{ marginBottom: '1.5rem' }}>
+              <div className="header-banner" style={{ marginBottom: '1rem' }}>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '13pt' }}>CỘNG HOÀ XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
-                  <div style={{ fontWeight: 'bold', fontSize: '13pt' }}>Độc lập - Tự do - Hạnh phúc</div>
-                  <div style={{ borderBottom: '1.5px solid black', width: '160px', margin: '4px auto 0' }}></div>
+                  <div style={{ fontWeight: 'bold', fontSize: '12pt' }}>CỘNG HOÀ XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '12pt' }}>Độc lập - Tự do - Hạnh phúc</div>
+                  <div style={{ borderBottom: '1.5px solid black', width: '150px', margin: '3px auto 0' }}></div>
                 </div>
-                <div style={{ textAlign: 'right', fontStyle: 'italic', fontSize: '14pt', marginTop: '12px', fontWeight: 'normal' }}>
+                <div style={{ textAlign: 'right', fontStyle: 'italic', fontSize: '13pt', marginTop: '8px', fontWeight: 'normal' }}>
                   Hàm Yên, ngày {new Date(evalToUse.evaluatedAt || currentResult.evaluatedAt).getDate()} tháng {new Date(evalToUse.evaluatedAt || currentResult.evaluatedAt).getMonth() + 1} năm {new Date(evalToUse.evaluatedAt || currentResult.evaluatedAt).getFullYear()}
                 </div>
               </div>
 
               {/* Title doc */}
-              <div style={{ lineHeight: '150%' }}>&nbsp;</div>
-              <div style={{ textAlign: 'center', marginBottom: '18pt' }}>
+              <div style={{ textAlign: 'center', marginBottom: '10pt', marginTop: '4px' }}>
                 {isCouncilTarget ? (
                   <>
-                    <div className="font-bold uppercase tracking-tight" style={{ fontSize: '15pt', textAlign: 'center', fontWeight: 'bold' }}>
+                    <div className="font-bold uppercase tracking-tight" style={{ fontSize: '14pt', textAlign: 'center', fontWeight: 'bold' }}>
                       PHIẾU NHẬN XÉT, ĐÁNH GIÁ SÁNG KIẾN
                     </div>
-                    <div className="font-bold uppercase tracking-tight" style={{ fontSize: '14pt', textAlign: 'center', fontWeight: 'bold', marginTop: '4px' }}>
+                    <div className="font-bold uppercase tracking-tight" style={{ fontSize: '13pt', textAlign: 'center', fontWeight: 'bold', marginTop: '2px' }}>
                       HỘI ĐỒNG THẨM ĐỊNH SÁNG KIẾN
                     </div>
                   </>
                 ) : hasPrCustomAppraisalMembers ? (
                   <>
-                    <div className="font-bold uppercase tracking-tight" style={{ fontSize: '15pt', textAlign: 'center', fontWeight: 'bold' }}>
+                    <div className="font-bold uppercase tracking-tight" style={{ fontSize: '14pt', textAlign: 'center', fontWeight: 'bold' }}>
                       PHIẾU NHẬN XÉT, ĐÁNH GIÁ SÁNG KIẾN
                     </div>
-                    <div className="font-bold uppercase tracking-tight" style={{ fontSize: '14pt', textAlign: 'center', fontWeight: 'bold', marginTop: '4px' }}>
+                    <div className="font-bold uppercase tracking-tight" style={{ fontSize: '13pt', textAlign: 'center', fontWeight: 'bold', marginTop: '2px' }}>
                       {prCouncilName}
                     </div>
                   </>
                 ) : (
-                  <div className="font-bold uppercase tracking-tight" style={{ fontSize: '15pt', textAlign: 'center', fontWeight: 'bold' }}>
+                  <div className="font-bold uppercase tracking-tight" style={{ fontSize: '14pt', textAlign: 'center', fontWeight: 'bold' }}>
                     PHIẾU NHẬN XÉT, ĐÁNH GIÁ SÁNG KIẾN
                   </div>
                 )}
@@ -4274,17 +5337,17 @@ export default function App() {
 
               {/* Thông tin tác giả trực tiếp theo mẫu */}
               {hasPrCustomAppraisalMembers && !isCouncilTarget ? (
-                <div style={{ marginBottom: '18pt', lineHeight: '1.6' }} className="space-y-2">
+                <div style={{ marginBottom: '12pt', lineHeight: '1.4' }} className="space-y-1">
                   {prCouncilMembers.length > 0 ? (
                     <>
                       {prCouncilMembers.map((m, idx) => (
-                        <div key={m.id || idx} className="space-y-1">
+                        <div key={m.id || idx} className="space-y-0.5">
                           <div><strong>{idx + 1}. Họ và tên Thành viên {idx + 1}:</strong> {m.name || '...................................................'}</div>
                           <div className="pl-6">- Đơn vị công tác: {m.unit || '...................................................'}</div>
                           <div className="pl-6">- Chức vụ: {m.role || '...................................................'}</div>
                         </div>
                       ))}
-                      <div className="pt-2"><strong>{prCouncilMembers.length + 1}. Tên giải pháp đề nghị công nhận sáng kiến:</strong> {currentResult.initiativeTitle ? `“${currentResult.initiativeTitle}”` : '...................................................'}</div>
+                      <div className="pt-1"><strong>{prCouncilMembers.length + 1}. Tên giải pháp đề nghị công nhận sáng kiến:</strong> {currentResult.initiativeTitle ? `“${currentResult.initiativeTitle}”` : '...................................................'}</div>
                     </>
                   ) : (
                     <>
@@ -4304,12 +5367,12 @@ export default function App() {
                     </>
                   )}
 
-                  <div className="pt-3">- Họ và tên Tác giả: {currentResult.teacher.teacherName || '...................................................'}</div>
+                  <div className="pt-1.5">- Họ và tên Tác giả: {currentResult.teacher.teacherName || '...................................................'}</div>
                   <div>- Chức vụ, đơn vị công tác: {currentResult.teacher.role || '............................'}, {currentResult.teacher.schoolName || '............................................'}</div>
                   <div>- Điện thoại: {currentResult.teacher.phone || '......................................'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Email:</strong> {currentResult.teacher.email || '..........................'}</div>
                 </div>
               ) : (
-                <div style={{ marginBottom: '18pt', lineHeight: '1.6' }} className="space-y-1">
+                <div style={{ marginBottom: '12pt', lineHeight: '1.4' }} className="space-y-0.5">
                   <div><strong>Họ và tên tác giả:</strong> {currentResult.teacher.teacherName || '...................................................'}</div>
                   <div><strong>Chức vụ:</strong> {currentResult.teacher.role || '...................................................'}</div>
                   <div><strong>Đơn vị công tác:</strong> {currentResult.teacher.schoolName || '...................................................'}</div>
@@ -4321,155 +5384,144 @@ export default function App() {
 
               {/* I. NHẬN XÉT, ĐÁNH GIÁ CHI TIẾT */}
               <div>
-                <h4 className="font-bold mb-4 mt-6" style={{ fontSize: '14pt', fontWeight: 'bold' }}>I. NHẬN XÉT, ĐÁNH GIÁ CHI TIẾT</h4>
+                <h4 className="font-bold mb-2 mt-4" style={{ fontSize: '13pt', fontWeight: 'bold' }}>I. NHẬN XÉT, ĐÁNH GIÁ CHI TIẾT</h4>
 
                 {/* 1. Sự cần thiết */}
-                <div className="mb-6">
-                  <div className="font-bold mb-2 uppercase">1. Về sự cần thiết của sáng kiến</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-3 leading-relaxed">
+                <div className="mb-4">
+                  <div className="font-bold mb-1 uppercase text-sm">1. Về sự cần thiết của sáng kiến (Điểm: {evalToUse.suCanThiet?.score || 0}/10 điểm)</div>
+                  <div style={{ textAlign: 'justify' }} className="mb-1 leading-normal">
                     {evalToUse.suCanThiet?.analysis && evalToUse.suCanThiet.analysis.length > 0 
                       ? renderList(evalToUse.suCanThiet.analysis)
                       : 'Sáng kiến được lựa chọn nghiên cứu xuất phát từ yêu cầu thực tiễn của công tác giáo dục trẻ. Việc nghiên cứu và áp dụng sáng kiến là cần thiết, phù hợp với yêu cầu đổi mới giáo dục hiện nay, góp phần nâng cao chất lượng chăm sóc, giáo dục.'}
                   </div>
-                  <div className="font-bold italic mb-1">Đánh giá:</div>
-                  <div className="space-y-0.5 mb-2 ml-4">
-                    <div>- Xác định đúng vấn đề trọng tâm.</div>
-                    <div>- Phù hợp chủ trương đổi mới giáo dục.</div>
-                    <div>- Có giá trị thực tiễn cao.</div>
+                  <div style={{ fontStyle: 'italic', fontSize: '12pt', margin: '4px 0' }}>
+                    <strong>Đánh giá tiêu chuẩn:</strong> Xác định đúng vấn đề trọng tâm; Phù hợp chủ trương đổi mới giáo dục; Có giá trị thực tiễn cao.
                   </div>
-                  <div className="mb-4"><strong>Điểm: {evalToUse.suCanThiet?.score || 0}/10 điểm</strong></div>
                 </div>
 
                 {/* 2. Tính mới */}
-                <div className="mb-6">
-                  <div className="font-bold mb-2 uppercase">2. Về tính mới, tính sáng tạo của sáng kiến</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-2 leading-relaxed">
+                <div className="mb-4">
+                  <div className="font-bold mb-1 uppercase text-sm">2. Về tính mới, tính sáng tạo của sáng kiến (Điểm: {evalToUse.tinhMoi?.score || 0}/20 điểm)</div>
+                  <div style={{ textAlign: 'justify' }} className="mb-1 leading-normal">
                     {evalToUse.tinhMoi?.analysis && evalToUse.tinhMoi.analysis.length > 0 
                       ? renderList(evalToUse.tinhMoi.analysis)
                       : 'Sáng kiến đã xây dựng được hệ thống các biện pháp chỉ đạo tương đối đồng bộ nhằm nâng cao chất lượng giáo dục tại đơn vị.'}
                   </div>
                   {evalToUse.tinhMoi?.cons && evalToUse.tinhMoi.cons.length > 0 && (
-                    <div className="mb-2 text-justify">
+                    <div className="mb-1 text-justify text-xs text-neutral-800">
                       <span className="font-bold italic">Hạn chế: </span>
                       {renderList(evalToUse.tinhMoi.cons, "")}
                     </div>
                   )}
-                  <div className="font-bold italic mb-1">Đánh giá:</div>
-                  <div className="space-y-0.5 mb-2 ml-4">
-                    <div>- Có tính mới trong phạm vi cơ sở.</div>
-                    <div>- Có sự sáng tạo trong tổ chức thực hiện.</div>
-                    <div>- Tính đổi mới khá rõ nét.</div>
+                  <div style={{ fontStyle: 'italic', fontSize: '12pt', margin: '4px 0' }}>
+                    <strong>Đánh giá tiêu chuẩn:</strong> Có tính mới trong phạm vi cơ sở; Có sự sáng tạo trong tổ chức thực hiện; Tính đổi mới khá rõ nét.
                   </div>
-                  <div className="mb-4"><strong>Điểm: {evalToUse.tinhMoi?.score || 0}/20 điểm</strong></div>
                 </div>
 
                 {/* 3. Nội dung và giải pháp */}
-                <div className="mb-6">
-                  <div className="font-bold mb-2 uppercase">3. Về nội dung và chất lượng các giải pháp</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-2 leading-relaxed">
+                <div className="mb-4">
+                  <div className="font-bold mb-1 uppercase text-sm">3. Về nội dung và chất lượng các giải pháp (Điểm: {evalToUse.giaiPhap?.score || 0}/30 điểm)</div>
+                  <div style={{ textAlign: 'justify' }} className="mb-1 leading-normal">
                     {evalToUse.giaiPhap?.analysis && evalToUse.giaiPhap.analysis.length > 0 
                       ? renderList(evalToUse.giaiPhap.analysis)
                       : 'Tác giả đã xây dựng hệ thống giải pháp có tính logic, đồng bộ và phù hợp với mục tiêu đề ra.'}
                   </div>
                   {evalToUse.giaiPhap?.pros && evalToUse.giaiPhap.pros.length > 0 && (
-                    <div className="mb-2 text-justify">
+                    <div className="mb-1 text-justify text-xs text-neutral-800">
                       <span className="font-bold italic">Nhận xét chung: </span>
                       {renderList(evalToUse.giaiPhap.pros, "")}
                     </div>
                   )}
                   {evalToUse.giaiPhap?.cons && evalToUse.giaiPhap.cons.length > 0 && (
-                    <div className="mb-2 text-justify">
+                    <div className="mb-1 text-justify text-xs text-neutral-800">
                       <span className="font-bold italic">Hạn chế: </span>
                       {renderList(evalToUse.giaiPhap.cons, "")}
                     </div>
                   )}
-                  <div className="mb-4"><strong>Điểm: {evalToUse.giaiPhap?.score || 0}/30 điểm</strong></div>
                 </div>
 
                 {/* 4. Hiệu quả áp dụng */}
-                <div className="mb-6">
-                  <div className="font-bold mb-2 uppercase">4. Về hiệu quả áp dụng</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-2 leading-relaxed">
+                <div className="mb-4">
+                  <div className="font-bold mb-1 uppercase text-sm">4. Về hiệu quả áp dụng (Điểm: {evalToUse.hieuQua?.score || 0}/30 điểm)</div>
+                  <div style={{ textAlign: 'justify' }} className="mb-1 leading-normal">
                     {evalToUse.hieuQua?.analysis && evalToUse.hieuQua.analysis.length > 0 
                       ? renderList(evalToUse.hieuQua.analysis)
                       : 'Sau quá trình triển khai, sáng kiến đã góp phần nâng cao năng lực chuyên môn của giáo viên, rèn luyện kỹ năng và sự tự tin cho học sinh.'}
                   </div>
                   {evalToUse.hieuQua?.cons && evalToUse.hieuQua.cons.length > 0 && (
-                    <div className="mb-2 text-justify">
+                    <div className="mb-1 text-justify text-xs text-neutral-800">
                       <span className="font-bold italic">Hạn chế: </span>
                       {renderList(evalToUse.hieuQua.cons, "")}
                     </div>
                   )}
-                  <div className="mb-4"><strong>Điểm: {evalToUse.hieuQua?.score || 0}/30 điểm</strong></div>
                 </div>
 
                 {/* 5. Khả năng áp dụng */}
-                <div className="mb-6">
-                  <div className="font-bold mb-2 uppercase">5. Về khả năng áp dụng và phạm vi ảnh hưởng</div>
-                  <div style={{ textAlign: 'justify' }} className="mb-2 leading-relaxed">
+                <div className="mb-4">
+                  <div className="font-bold mb-1 uppercase text-sm">5. Về khả năng áp dụng và phạm vi ảnh hưởng (Điểm: {evalToUse.khaNangApDung?.score || 0}/10 điểm)</div>
+                  <div style={{ textAlign: 'justify' }} className="mb-1 leading-normal">
                     {evalToUse.khaNangApDung?.analysis && evalToUse.khaNangApDung.analysis.length > 0 
                       ? renderList(evalToUse.khaNangApDung.analysis)
                       : 'Sáng kiến đã được triển khai hiệu quả tại nhà trường. Các biện pháp phù hợp với điều kiện thực tế, dễ thực hiện và có khả năng áp dụng tại các đơn vị tương đồng.'}
                   </div>
                   {evalToUse.khaNangApDung?.cons && evalToUse.khaNangApDung.cons.length > 0 && (
-                    <div className="mb-2 text-justify">
+                    <div className="mb-1 text-justify text-xs text-neutral-800">
                       <span className="font-bold italic">Hạn chế: </span>
                       {renderList(evalToUse.khaNangApDung.cons, "")}
                     </div>
                   )}
-                  <div className="mb-4"><strong>Điểm: {evalToUse.khaNangApDung?.score || 0}/10 điểm</strong></div>
                 </div>
               </div>
 
               {/* Table Scores */}
-              <h4 className="font-bold mb-4 mt-6" style={{ fontSize: '14pt', fontWeight: 'bold' }}>II. TỔNG HỢP KẾT QUẢ CHẤM ĐIỂM</h4>
-              <div className="mb-6">
-                <table className="w-full border-collapse border border-black text-xs text-left" style={{ fontSize: '14pt' }}>
+              <h4 className="font-bold mb-2 mt-4" style={{ fontSize: '13pt', fontWeight: 'bold' }}>II. TỔNG HỢP KẾT QUẢ CHẤM ĐIỂM</h4>
+              <div className="mb-4">
+                <table className="w-full border-collapse border border-black text-xs text-left" style={{ fontSize: '12pt' }}>
                   <thead>
                     <tr className="bg-neutral-50 text-center font-bold">
-                      <th className="border border-black p-2.5" style={{ padding: '8px', border: '1px solid black' }}>Nội dung đánh giá</th>
-                      <th className="border border-black p-2.5 w-32 text-center" style={{ textAlign: 'center', width: '120px', padding: '8px', border: '1px solid black' }}>Điểm tối đa</th>
-                      <th className="border border-black p-2.5 w-32 text-center" style={{ textAlign: 'center', width: '120px', padding: '8px', border: '1px solid black' }}>Điểm chấm</th>
+                      <th className="border border-black p-1.5" style={{ padding: '6px', border: '1px solid black' }}>Nội dung đánh giá</th>
+                      <th className="border border-black p-1.5 w-32 text-center" style={{ textAlign: 'center', width: '100px', padding: '6px', border: '1px solid black' }}>Điểm tối đa</th>
+                      <th className="border border-black p-1.5 w-32 text-center" style={{ textAlign: 'center', width: '100px', padding: '6px', border: '1px solid black' }}>Điểm chấm</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="border border-black p-2.5" style={{ padding: '8px', border: '1px solid black' }}>Sự cần thiết của sáng kiến</td>
-                      <td className="border border-black p-2.5 text-center" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>10</td>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>{evalToUse.suCanThiet?.score || 0}</td>
+                      <td className="border border-black p-1.5" style={{ padding: '6px', border: '1px solid black' }}>Sự cần thiết của sáng kiến</td>
+                      <td className="border border-black p-1.5 text-center" style={{ textAlign: 'center', padding: '6px', border: '1px solid black' }}>10</td>
+                      <td className="border border-black p-1.5 text-center font-bold" style={{ textAlign: 'center', padding: '6px', border: '1px solid black' }}>{evalToUse.suCanThiet?.score || 0}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-2.5" style={{ padding: '8px', border: '1px solid black' }}>Tính mới, tính sáng tạo</td>
-                      <td className="border border-black p-2.5 text-center" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>20</td>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>{evalToUse.tinhMoi?.score || 0}</td>
+                      <td className="border border-black p-1.5" style={{ padding: '6px', border: '1px solid black' }}>Tính mới, tính sáng tạo</td>
+                      <td className="border border-black p-1.5 text-center" style={{ textAlign: 'center', padding: '6px', border: '1px solid black' }}>20</td>
+                      <td className="border border-black p-1.5 text-center font-bold" style={{ textAlign: 'center', padding: '6px', border: '1px solid black' }}>{evalToUse.tinhMoi?.score || 0}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-2.5" style={{ padding: '8px', border: '1px solid black' }}>Nội dung và giải pháp</td>
-                      <td className="border border-black p-2.5 text-center" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>30</td>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>{evalToUse.giaiPhap?.score || 0}</td>
+                      <td className="border border-black p-1.5" style={{ padding: '6px', border: '1px solid black' }}>Nội dung và giải pháp</td>
+                      <td className="border border-black p-1.5 text-center" style={{ textAlign: 'center', padding: '6px', border: '1px solid black' }}>30</td>
+                      <td className="border border-black p-1.5 text-center font-bold" style={{ textAlign: 'center', padding: '6px', border: '1px solid black' }}>{evalToUse.giaiPhap?.score || 0}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-2.5" style={{ padding: '8px', border: '1px solid black' }}>Hiệu quả áp dụng</td>
-                      <td className="border border-black p-2.5 text-center" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>30</td>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>{evalToUse.hieuQua?.score || 0}</td>
+                      <td className="border border-black p-1.5" style={{ padding: '6px', border: '1px solid black' }}>Hiệu quả áp dụng</td>
+                      <td className="border border-black p-1.5 text-center" style={{ textAlign: 'center', padding: '6px', border: '1px solid black' }}>30</td>
+                      <td className="border border-black p-1.5 text-center font-bold" style={{ textAlign: 'center', padding: '6px', border: '1px solid black' }}>{evalToUse.hieuQua?.score || 0}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-2.5" style={{ padding: '8px', border: '1px solid black' }}>Khả năng áp dụng, phạm vi ảnh hưởng</td>
-                      <td className="border border-black p-2.5 text-center" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>10</td>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center', padding: '8px', border: '1px solid black' }}>{evalToUse.khaNangApDung?.score || 0}</td>
+                      <td className="border border-black p-1.5" style={{ padding: '6px', border: '1px solid black' }}>Khả năng áp dụng, phạm vi ảnh hưởng</td>
+                      <td className="border border-black p-1.5 text-center" style={{ textAlign: 'center', padding: '6px', border: '1px solid black' }}>10</td>
+                      <td className="border border-black p-1.5 text-center font-bold" style={{ textAlign: 'center', padding: '6px', border: '1px solid black' }}>{evalToUse.khaNangApDung?.score || 0}</td>
                     </tr>
                     <tr className="font-bold" style={{ fontWeight: 'bold' }}>
-                      <td className="border border-black p-2.5 font-bold text-center" style={{ textAlign: 'center', fontWeight: 'bold', padding: '8px', border: '1px solid black' }}><strong>Tổng cộng</strong></td>
-                      <td className="border border-black p-2.5 text-center font-bold" style={{ textAlign: 'center', fontWeight: 'bold', padding: '8px', border: '1px solid black' }}><strong>100</strong></td>
-                      <td className="border border-black p-2.5 text-center font-bold text-red-900" style={{ textAlign: 'center', fontWeight: 'bold', padding: '8px', border: '1px solid black' }}><strong>{evalToUse.totalScore}</strong></td>
+                      <td className="border border-black p-1.5 font-bold text-center" style={{ textAlign: 'center', fontWeight: 'bold', padding: '6px', border: '1px solid black' }}><strong>Tổng cộng</strong></td>
+                      <td className="border border-black p-1.5 text-center font-bold" style={{ textAlign: 'center', fontWeight: 'bold', padding: '6px', border: '1px solid black' }}><strong>100</strong></td>
+                      <td className="border border-black p-1.5 text-center font-bold text-red-900" style={{ textAlign: 'center', fontWeight: 'bold', padding: '6px', border: '1px solid black' }}><strong>{evalToUse.totalScore}</strong></td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
               {/* III. KẾT LUẬN */}
-              <h4 className="font-bold mb-4 mt-6" style={{ fontSize: '14pt', fontWeight: 'bold' }}>III. KẾT LUẬN</h4>
-              <div style={{ textAlign: 'justify', lineHeight: '1.6' }} className="space-y-3 mb-6">
+              <h4 className="font-bold mb-2 mt-4" style={{ fontSize: '13pt', fontWeight: 'bold' }}>III. KẾT LUẬN</h4>
+              <div style={{ textAlign: 'justify', lineHeight: '1.4' }} className="space-y-1 mb-4">
                 <div>
                   Sáng kiến: {currentResult.initiativeTitle ? `“${currentResult.initiativeTitle}”` : '...................................................'} là sáng kiến có giá trị thực tiễn, đáp ứng yêu cầu đổi mới giáo dục mầm non, góp phần nâng cao chất lượng chuẩn bị cho trẻ trước khi vào lớp 1.
                 </div>
@@ -4479,7 +5531,7 @@ export default function App() {
                 <div>
                   Tuy nhiên, để nâng cao giá trị khoa học và sức thuyết phục của sáng kiến, tác giả cần bổ sung thêm số liệu định lượng, các bảng đối chứng trước và sau tác động, đồng thời tăng cường minh chứng về phạm vi ảnh hưởng và khả năng nhân rộng.
                 </div>
-                <div className="pt-2 font-bold uppercase" style={{ fontWeight: 'bold' }}>
+                <div className="pt-1 font-bold uppercase" style={{ fontWeight: 'bold' }}>
                   Xếp loại đề nghị: {evalToUse.classification || 'LOẠI KHÁ'}
                 </div>
                 <div className="font-bold" style={{ fontWeight: 'bold' }}>
@@ -4488,25 +5540,25 @@ export default function App() {
               </div>
 
               {/* Signatures */}
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '2.5rem', border: 'none' }} border={0}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '1.5rem', border: 'none' }} border={0}>
                 <tbody>
                   <tr style={{ border: 'none' }}>
                     <td style={{ width: '45%', border: 'none' }}></td>
-                    <td style={{ width: '55%', textAlign: 'center', verticalAlign: 'top', fontSize: '14pt', border: 'none' }}>
-                      <div style={{ fontStyle: 'italic', fontSize: '14pt', marginBottom: '4px' }}>
+                    <td style={{ width: '55%', textAlign: 'center', verticalAlign: 'top', fontSize: '13pt', border: 'none' }}>
+                      <div style={{ fontStyle: 'italic', fontSize: '13pt', marginBottom: '3px' }}>
                         Hàm Yên, ngày {new Date(evalToUse.evaluatedAt || currentResult.evaluatedAt).getDate()} tháng {new Date(evalToUse.evaluatedAt || currentResult.evaluatedAt).getMonth() + 1} năm {new Date(evalToUse.evaluatedAt || currentResult.evaluatedAt).getFullYear()}
                       </div>
                       {isCouncilTarget ? (
                         <>
-                          <strong style={{ display: 'block', fontSize: '14pt', fontWeight: 'bold' }}>TM. HỘI ĐỒNG THẨM ĐỊNH SÁNG KIẾN</strong>
-                          <div style={{ fontSize: '14pt', fontStyle: 'italic', marginBottom: '80px' }}>(Ký, ghi rõ họ và tên)</div>
-                          <div style={{ fontWeight: 'bold' }}>ỦY VIÊN THƯ KÝ HỘI ĐỒNG</div>
+                          <strong style={{ display: 'block', fontSize: '13pt', fontWeight: 'bold' }}>TM. HỘI ĐỒNG THẨM ĐỊNH SÁNG KIẾN</strong>
+                          <div style={{ fontSize: '12pt', fontStyle: 'italic', marginBottom: '50px' }}>(Ký, ghi rõ họ và tên)</div>
+                          <div style={{ fontWeight: 'bold', fontSize: '13pt' }}>ỦY VIÊN THƯ KÝ HỘI ĐỒNG</div>
                         </>
                       ) : (
                         <>
-                          <strong style={{ display: 'block', fontSize: '14pt', fontWeight: 'bold' }}>NGƯỜI NHẬN XÉT, ĐÁNH GIÁ</strong>
-                          <div style={{ fontSize: '14pt', fontStyle: 'italic', marginBottom: '80px' }}>(Ký, ghi rõ họ và tên)</div>
-                          <div style={{ fontWeight: 'bold' }}>{reviewerName || '........................................'}</div>
+                          <strong style={{ display: 'block', fontSize: '13pt', fontWeight: 'bold' }}>NGƯỜI NHẬN XÉT, ĐÁNH GIÁ</strong>
+                          <div style={{ fontSize: '12pt', fontStyle: 'italic', marginBottom: '50px' }}>(Ký, ghi rõ họ và tên)</div>
+                          <div style={{ fontWeight: 'bold', fontSize: '13pt' }}>{reviewerName || '........................................'}</div>
                         </>
                       )}
                     </td>
@@ -4544,6 +5596,96 @@ export default function App() {
         </div>
       );
     })()}
+
+    {/* 🗑️ CUSTOM CONFIRM SINGLE DELETE MODAL */}
+    {deleteConfirmId && (() => {
+      const itemToDelete = warehouseInitiatives.find(item => item.id === deleteConfirmId);
+      return (
+        <div className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs no-print">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-natural-border shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-red-50 border-b border-red-100 px-5 py-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-red-900 text-sm md:text-base">Xác nhận xóa sáng kiến</h3>
+                <p className="text-xs text-red-700/80">Hành động này không thể hoàn tác</p>
+              </div>
+            </div>
+            <div className="p-5 flex flex-col gap-3">
+              <p className="text-xs text-natural-text leading-relaxed">
+                Bạn có chắc chắn muốn xóa sáng kiến kinh nghiệm này khỏi kho lưu trữ?
+              </p>
+              {itemToDelete && (
+                <div className="bg-natural-accent/40 rounded-xl p-3 border border-natural-border/60">
+                  <div className="text-xs font-bold text-natural-text line-clamp-2">{itemToDelete.initiativeTitle}</div>
+                  <div className="text-[10px] text-natural-muted mt-1">Tác giả: {itemToDelete.teacherName}</div>
+                </div>
+              )}
+            </div>
+            <div className="bg-natural-accent border-t border-natural-border p-4 flex justify-end gap-2 text-xs font-semibold">
+              <button
+                onClick={() => setDeleteConfirmId(null)}
+                className="px-4 py-2 border border-natural-border hover:bg-white rounded-xl text-natural-primary uppercase tracking-wider transition cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                onClick={() => executeDeleteWarehouseInitiative(deleteConfirmId)}
+                className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl uppercase tracking-wider transition cursor-pointer"
+              >
+                Xác nhận xóa
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
+
+    {/* 🗑️ CUSTOM CONFIRM BULK DELETE MODAL */}
+    {isBulkDeleteConfirm && (
+      <div className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs no-print">
+        <div className="bg-white rounded-2xl max-w-md w-full border border-natural-border shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-red-50 border-b border-red-100 px-5 py-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-red-900 text-sm md:text-base">Xóa hàng loạt sáng kiến</h3>
+              <p className="text-xs text-red-700/80">Hành động này không thể hoàn tác</p>
+            </div>
+          </div>
+          <div className="p-5 flex flex-col gap-3">
+            <p className="text-xs text-natural-text leading-relaxed">
+              Bạn có chắc chắn muốn xóa <span className="font-bold text-red-600">{selectedWarehouseIds.length}</span> sáng kiến kinh nghiệm đang được chọn khỏi kho lưu trữ?
+            </p>
+            <div className="max-h-[120px] overflow-y-auto custom-scrollbar bg-natural-accent/40 rounded-xl p-3 border border-natural-border/60 flex flex-col gap-2">
+              {warehouseInitiatives
+                .filter(item => selectedWarehouseIds.includes(item.id))
+                .map((item, idx) => (
+                  <div key={item.id} className="text-[11px] text-natural-text truncate">
+                    {idx + 1}. <span className="font-medium">{item.initiativeTitle}</span> ({item.teacherName})
+                  </div>
+                ))}
+            </div>
+          </div>
+          <div className="bg-natural-accent border-t border-natural-border p-4 flex justify-end gap-2 text-xs font-semibold">
+            <button
+              onClick={() => setIsBulkDeleteConfirm(false)}
+              className="px-4 py-2 border border-natural-border hover:bg-white rounded-xl text-natural-primary uppercase tracking-wider transition cursor-pointer"
+            >
+              Hủy bỏ
+            </button>
+            <button
+              onClick={executeBulkDeleteWarehouse}
+              className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl uppercase tracking-wider transition cursor-pointer"
+            >
+              Xác nhận xóa hết
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
 
     </div>
   );

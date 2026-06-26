@@ -123,6 +123,19 @@ export interface SpellingError {
   reason: string;
 }
 
+export interface WarehouseInitiative {
+  id: string;
+  initiativeTitle: string;
+  teacherName: string;
+  role: string;
+  schoolName: string;
+  initiativeText: string;
+  status: 'Chưa thẩm định' | 'Đã thẩm định';
+  evaluationResultId?: string;
+  fileName: string;
+  uploadedAt: string;
+}
+
 export interface PlagiarismResult {
   id: string;
   title: string;
